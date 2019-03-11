@@ -1,4 +1,6 @@
 import numpy as np
+from mpi4py import MPI
+
 
 class Lattice:
     """
@@ -31,7 +33,7 @@ class Lattice:
     #TODO rename
     W = np.array([4 / 9] + [1 / 9] * 4 + [1 / 36] * 4)
 
-    def __init__(self, x_len, y_len):
+    def __init__(self, x_len, y_len, x_cartlen=1, y_cartlen=1):
         """
         Initialises a lattice with equilibrium conditions
         """
@@ -40,11 +42,65 @@ class Lattice:
         self.data = np.broadcast_to(self.W[np.newaxis, np.newaxis, :],
                                     (x_len + 2, y_len + 2, self.NC)).copy()
 
+        # we will need these contiguous arrays to receive column data from neighbour cells
+        self.halo_ydec_recvr = np.empty([x_len + 2, 1, self.NC])
+        self.halo_yinc_recvr = np.empty([x_len + 2, 1, self.NC])
+
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+
+        # we want periodicity in all dimensions - for now
+        self.cart = self.comm.Create_cart([x_cartlen, y_cartlen],
+                                          periods=[True, True])
+
+        # these are 2-tuples which each store the rank of the previous (next) lattice on the [x, y] axis
+        self.cart_prev, self.cart_next = zip(
+            self.cart.Shift(direction=0, disp=1),
+            self.cart.Shift(direction=1, disp=1))
+
+        # the size of the full lattice
+        self.gl_x_len = x_len * x_cartlen
+        self.gl_y_len = y_len * y_cartlen
+
     def core(self):
         """Returns the data from this lattice, excluding the halo cells"""
         return self.data[1:-1, 1:-1, :]
 
-    
+    def halo_copy(self):
+        """copies data into the halo cells of all lattices"""
+
+        # Send to next x, recv from prev x
+        self.comm.Sendrecv(
+            self.data[-2:-1, :],
+            self.cart_next[0],
+            recvbuf=self.data[0:1, :],
+            source=self.cart_prev[0])
+
+        # send to prev x, recv from next x
+        self.comm.Sendrecv(
+            self.data[1:2, :],
+            self.cart_prev[0],
+            recvbuf=self.data[-1:],
+            source=self.cart_next[0])
+
+        # Send to next y, recv from prev y
+        self.comm.Sendrecv(
+            np.ascontiguousarray(self.data[:, -2:-1]),
+            self.cart_next[1],
+            recvbuf=self.halo_ydec_recvr,
+            source=self.cart_prev[1])
+
+        # send to prev y, recv from next y
+        self.comm.Sendrecv(
+            np.ascontiguousarray(self.data[:, 1:2]),
+            self.cart_prev[1],
+            recvbuf=self.halo_yinc_recvr,
+            source=self.cart_next[1])
+
+        # copy contiguous temporary buffers into non-contiguous halo columns
+        self.data[:, 0:1] = self.halo_ydec_recvr
+        self.data[:, -1:] = self.halo_yinc_recvr
+
     def stream(self, steps=1):
         """roll each of the channels. This uses periodic boundary conditions everywhere."""
 
