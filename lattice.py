@@ -54,6 +54,11 @@ class Lattice:
         self.data = np.broadcast_to(self.W[np.newaxis, np.newaxis, :],
                                     (x_len + 2, y_len + 2, self.NC)).copy()
 
+        # the data from this lattice, excluding the halo cells
+        self.core = self.data[1:-1, 1:-1, :]
+        assert not self.core.flags.owndata
+        assert self.core.flags.writeable
+
         # we will need these contiguous arrays to receive column data from neighbour cells
         # (rows are already contiguous)
         self.halo_ydec_recvr = np.empty([x_len + 2, 1, self.NC])
@@ -91,10 +96,6 @@ class Lattice:
 
     def reset_to_eq(self):
         self.data[...] = self.W[np.newaxis, np.newaxis, :] #broadcast, please.
-
-    def core(self):
-        """Returns the data from this lattice, excluding the halo cells"""
-        return self.data[1:-1, 1:-1, :]
 
     def halo_copy(self):
         """copies data into the halo cells of all lattices"""
@@ -143,7 +144,7 @@ class Lattice:
 
         if self.walls is not None:
             # bounce channels backward
-            self.core()[self.walls] = self.core()[self.walls][:, self.C_reflection]
+            self.core[self.walls] = self.core[self.walls][:, self.C_reflection]
 
             # are walls moving?
             # TODO
@@ -151,19 +152,15 @@ class Lattice:
         # check that particles have been conserved
         assert np.isclose(n, np.sum(self.data))
 
-    def rho(self, core=True):
+    def rho(self):
         """m x n: density at every position"""
-        data = self.core() if core else self.data
-
-        rho = np.sum(data, axis=2, keepdims=True)
+        rho = np.sum(self.core, axis=2, keepdims=True)
 
         return rho
 
-    def j(self, core=True):
+    def j(self):
         """2 x m x n: density * velocity at each point"""
-        data = self.core() if core else self.data
-
-        j = np.einsum('mni,id->mnd', data, self.C)
+        j = np.einsum('mni,id->mnd', self.core, self.C)
 
         return j
 
@@ -206,5 +203,5 @@ class Lattice:
 
     def collide(self, omega, prescribed_u=None):
         # prescribed_u (optional) overrides the u calculated from the provided lattice
-        diff_to_eq = self.f_eq(prescribed_u) - self.core()
-        self.core()[...] = self.core() + (omega * diff_to_eq)
+
+        self.core += omega * (self.f_eq(prescribed_u) - self.core)
