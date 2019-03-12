@@ -27,15 +27,21 @@ class Lattice:
     C = np.array([[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1],
                   [-1, -1], [1, -1]])
 
+    # used for bouncing off wall cells
+    C_reflection = np.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
+
     NC = len(C)
 
     # distribution probabilities for each channel, in equilibrium
     #TODO rename
     W = np.array([4 / 9] + [1 / 9] * 4 + [1 / 36] * 4)
 
-    def __init__(self, x_full_len, y_full_len, x_node_qt=1, y_node_qt=1):
+    def __init__(self, x_full_len, y_full_len, x_node_qt=1, y_node_qt=1, wall_fn=None, wall_vel_fn=None):
         """
         Initialises a lattice with equilibrium conditions
+
+        wall_fn: (x, y) -> bool IsWallCell
+
         """
 
         # calculate the size of the local node
@@ -66,8 +72,17 @@ class Lattice:
         self.x_range = np.arange(x_coord * x_len, (x_coord + 1) * x_len)
         self.y_range = np.arange(y_coord * y_len, (y_coord + 1) * y_len)
 
-        # print ("co", self.cart.coords, "x rnage", self.x_range)
-        # print ("co", self.cart.coords, "y rnage", self.y_range)
+        # work out the locations of dry cells (if any) in this node
+        if wall_fn is None:
+            self.walls = None
+        else:
+            self.walls = wall_fn(*np.meshgrid(self.x_range, self.y_range, indexing='ij'))
+
+        # velocity of walls as function of time
+        if wall_vel_fn is None:
+            wall_vel_fn = lambda t: np.array(0, 0)
+
+        self.wall_vel_fn = wall_vel_fn
 
         # these are 2-tuples which each store the rank of the previous (next) lattice on the [x, y] axis
         self.rank_prev, self.rank_next = zip(
@@ -125,6 +140,13 @@ class Lattice:
             # channels move to like channels!
             self.data[:, :, i] = np.roll(
                 self.data[:, :, i], self.C[i] * steps, axis=(0, 1))
+
+        if self.walls is not None:
+            # bounce channels backward
+            self.core()[self.walls] = self.core()[self.walls][:, self.C_reflection]
+
+            # are walls moving?
+            # TODO
 
         # check that particles have been conserved
         assert np.isclose(n, np.sum(self.data))
