@@ -1,7 +1,6 @@
 import numpy as np
 from mpi4py import MPI
 
-
 class Lattice:
     """
     a Lattice
@@ -36,7 +35,7 @@ class Lattice:
     #TODO rename
     W = np.array([4 / 9] + [1 / 9] * 4 + [1 / 36] * 4)
 
-    def __init__(self, x_full_len, y_full_len, x_node_qt=1, y_node_qt=1, wall_fn=None, wall_vel_fn=None):
+    def __init__(self, x_full_len, y_full_len, x_node_qt=None, y_node_qt=None, wall_fn=None, drag_fn=None):
         """
         Initialises a lattice with equilibrium conditions
 
@@ -44,9 +43,18 @@ class Lattice:
 
         """
 
+        self.comm = MPI.COMM_WORLD
+        self.rank = self.comm.Get_rank()
+
+        if x_node_qt is None or y_node_qt is None:
+            # calculate best fit
+            x_node_qt, y_node_qt = self.find_division(self.comm.Get_size(), x_full_len, y_full_len)
+
         # calculate the size of the local node
         assert x_full_len % x_node_qt == 0, "Lattice x-dimension not evenly divisible by number of nodes"
         assert y_full_len % y_node_qt == 0, "Lattice y-dimension not evenly divisible by number of nodes"
+
+        self.x_full_len, self.y_full_len = x_full_len, y_full_len
 
         x_len, y_len = x_full_len // x_node_qt, y_full_len // y_node_qt
 
@@ -64,8 +72,6 @@ class Lattice:
         self.halo_ydec_recvr = np.empty([x_len + 2, 1, self.NC])
         self.halo_yinc_recvr = np.empty([x_len + 2, 1, self.NC])
 
-        self.comm = MPI.COMM_WORLD
-        self.rank = self.comm.Get_rank()
 
         # we want periodicity in all dimensions - for now
         # the next line will throw an exception if x_node_qt * y_node_qt != comm.Get_size()
@@ -83,16 +89,29 @@ class Lattice:
         else:
             self.walls = wall_fn(*np.meshgrid(self.x_range, self.y_range, indexing='ij'))
 
-        # velocity of walls as function of time
-        if wall_vel_fn is None:
-            wall_vel_fn = lambda t: np.array(0, 0)
-
-        self.wall_vel_fn = wall_vel_fn
-
+        # velocity of walls (for the sliding lid thing)
+        if drag_fn is None:
+            self.drag = None
+        else:
+            self.drag = drag_fn(*np.meshgrid(self.x_range, self.y_range, indexing='ij'))
+        
         # these are 2-tuples which each store the rank of the previous (next) lattice on the [x, y] axis
         self.rank_prev, self.rank_next = zip(
             self.cart.Shift(direction=0, disp=1),
             self.cart.Shift(direction=1, disp=1))
+    
+    @staticmethod
+    def find_division(n, x_len, y_len):
+        for f in range(int(n**0.5), 0, -1):
+            if n % f == 0:
+                g = n // f
+            
+                if x_len % f == 0 and y_len % g == 0:
+                    return [f, g]
+                if x_len % g == 0 and y_len % f == 0:
+                    return [g, f]
+        
+        raise Exception("Can not arrange ({},{}) lattice on {} processors".format(x_len, y_len, n))
 
     def reset_to_eq(self):
         self.data[...] = self.W[np.newaxis, np.newaxis, :] #broadcast, please.
@@ -185,7 +204,7 @@ class Lattice:
 
         cu = np.einsum('id,mnd->mni', self.C, u)
 
-        cu2 = np.power(cu, 2)
+        cu2 = cu ** 2
 
         u2 = np.sum(np.power(u, 2), axis=2, keepdims=True)
 
@@ -203,5 +222,10 @@ class Lattice:
 
     def collide(self, omega, prescribed_u=None):
         # prescribed_u (optional) overrides the u calculated from the provided lattice
-
+        # TODO - make this a function?
         self.core += omega * (self.f_eq(prescribed_u) - self.core)
+
+    def gather(self, data):
+        pool = np.empty([self.x_full_len, self.y_full_len] + list(data.shape[2:]))
+        self.comm.Gather(np.ascontiguousarray(data), pool, root=0)
+        return pool
