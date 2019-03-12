@@ -33,16 +33,23 @@ class Lattice:
     #TODO rename
     W = np.array([4 / 9] + [1 / 9] * 4 + [1 / 36] * 4)
 
-    def __init__(self, x_len, y_len, x_cartlen=1, y_cartlen=1):
+    def __init__(self, x_full_len, y_full_len, x_node_qt=1, y_node_qt=1):
         """
         Initialises a lattice with equilibrium conditions
         """
+
+        # calculate the size of the local node
+        assert x_full_len % x_node_qt == 0, "Lattice x-dimension not evenly divisible by number of nodes"
+        assert y_full_len % y_node_qt == 0, "Lattice y-dimension not evenly divisible by number of nodes"
+
+        x_len, y_len = x_full_len // x_node_qt, y_full_len // y_node_qt
 
         # we add two to each dimension to allow for the halo
         self.data = np.broadcast_to(self.W[np.newaxis, np.newaxis, :],
                                     (x_len + 2, y_len + 2, self.NC)).copy()
 
         # we will need these contiguous arrays to receive column data from neighbour cells
+        # (rows are already contiguous)
         self.halo_ydec_recvr = np.empty([x_len + 2, 1, self.NC])
         self.halo_yinc_recvr = np.empty([x_len + 2, 1, self.NC])
 
@@ -50,17 +57,25 @@ class Lattice:
         self.rank = self.comm.Get_rank()
 
         # we want periodicity in all dimensions - for now
-        self.cart = self.comm.Create_cart([x_cartlen, y_cartlen],
+        # the next line will throw an exception if x_node_qt * y_node_qt != comm.Get_size()
+        self.cart = self.comm.Create_cart([x_node_qt, y_node_qt],
                                           periods=[True, True])
 
+        # calculate range of x and y in the full lattice represented by this node
+        x_coord, y_coord = self.cart.coords
+        self.x_range = np.arange(x_coord * x_len, (x_coord + 1) * x_len)
+        self.y_range = np.arange(y_coord * y_len, (y_coord + 1) * y_len)
+
+        # print ("co", self.cart.coords, "x rnage", self.x_range)
+        # print ("co", self.cart.coords, "y rnage", self.y_range)
+
         # these are 2-tuples which each store the rank of the previous (next) lattice on the [x, y] axis
-        self.cart_prev, self.cart_next = zip(
+        self.rank_prev, self.rank_next = zip(
             self.cart.Shift(direction=0, disp=1),
             self.cart.Shift(direction=1, disp=1))
 
-        # the size of the full lattice
-        self.gl_x_len = x_len * x_cartlen
-        self.gl_y_len = y_len * y_cartlen
+    def reset_to_eq(self):
+        self.data[...] = self.W[np.newaxis, np.newaxis, :] #broadcast, please.
 
     def core(self):
         """Returns the data from this lattice, excluding the halo cells"""
@@ -72,30 +87,30 @@ class Lattice:
         # Send to next x, recv from prev x
         self.comm.Sendrecv(
             self.data[-2:-1, :],
-            self.cart_next[0],
+            self.rank_next[0],
             recvbuf=self.data[0:1, :],
-            source=self.cart_prev[0])
+            source=self.rank_prev[0])
 
         # send to prev x, recv from next x
         self.comm.Sendrecv(
             self.data[1:2, :],
-            self.cart_prev[0],
+            self.rank_prev[0],
             recvbuf=self.data[-1:],
-            source=self.cart_next[0])
+            source=self.rank_next[0])
 
         # Send to next y, recv from prev y
         self.comm.Sendrecv(
             np.ascontiguousarray(self.data[:, -2:-1]),
-            self.cart_next[1],
+            self.rank_next[1],
             recvbuf=self.halo_ydec_recvr,
-            source=self.cart_prev[1])
+            source=self.rank_prev[1])
 
         # send to prev y, recv from next y
         self.comm.Sendrecv(
             np.ascontiguousarray(self.data[:, 1:2]),
-            self.cart_prev[1],
+            self.rank_prev[1],
             recvbuf=self.halo_yinc_recvr,
-            source=self.cart_next[1])
+            source=self.rank_next[1])
 
         # copy contiguous temporary buffers into non-contiguous halo columns
         self.data[:, 0:1] = self.halo_ydec_recvr
@@ -139,9 +154,7 @@ class Lattice:
         j = self.j()
 
         # out= option gives us zeros where the where= condition is not met (i.e. where rho = 0)
-        u = np.divide(j, rho, out=np.zeros_like(j), where=(rho != 0))
-
-        return u
+        return np.divide(j, rho, out=np.zeros_like(j), where=(rho != 0))
 
     def f_eq(self, u=None):
         """m x n x i: equilibrium flow at each position (given current avg velocity)
