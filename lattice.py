@@ -1,6 +1,7 @@
 import numpy as np
 from mpi4py import MPI
 
+
 class Lattice:
     """
     a Lattice
@@ -35,7 +36,13 @@ class Lattice:
     #TODO rename
     W = np.array([4 / 9] + [1 / 9] * 4 + [1 / 36] * 4)
 
-    def __init__(self, x_full_len, y_full_len, x_node_qt=None, y_node_qt=None, wall_fn=None, drag_fn=None):
+    def __init__(self,
+                 x_full_len,
+                 y_full_len,
+                 x_node_qt=None,
+                 y_node_qt=None,
+                 wall_fn=None,
+                 drag_fn=None):
         """
         Initialises a lattice with equilibrium conditions
 
@@ -48,7 +55,8 @@ class Lattice:
 
         if x_node_qt is None or y_node_qt is None:
             # calculate best fit
-            x_node_qt, y_node_qt = self.find_division(self.comm.Get_size(), x_full_len, y_full_len)
+            x_node_qt, y_node_qt = self.find_division(self.comm.Get_size(),
+                                                      x_full_len, y_full_len)
 
         # calculate the size of the local node
         assert x_full_len % x_node_qt == 0, "Lattice x-dimension not evenly divisible by number of nodes"
@@ -72,7 +80,6 @@ class Lattice:
         self.halo_ydec_recvr = np.empty([x_len + 2, 1, self.NC])
         self.halo_yinc_recvr = np.empty([x_len + 2, 1, self.NC])
 
-
         # we want periodicity in all dimensions - for now
         # the next line will throw an exception if x_node_qt * y_node_qt != comm.Get_size()
         self.cart = self.comm.Create_cart([x_node_qt, y_node_qt],
@@ -87,34 +94,38 @@ class Lattice:
         if wall_fn is None:
             self.walls = None
         else:
-            self.walls = wall_fn(*np.meshgrid(self.x_range, self.y_range, indexing='ij'))
+            self.walls = wall_fn(
+                *np.meshgrid(self.x_range, self.y_range, indexing='ij'))
 
         # velocity of walls (for the sliding lid thing)
         if drag_fn is None:
             self.drag = None
         else:
-            self.drag = drag_fn(*np.meshgrid(self.x_range, self.y_range, indexing='ij'))
-        
+            self.drag = drag_fn(
+                *np.meshgrid(self.x_range, self.y_range, indexing='ij'))
+
         # these are 2-tuples which each store the rank of the previous (next) lattice on the [x, y] axis
         self.rank_prev, self.rank_next = zip(
             self.cart.Shift(direction=0, disp=1),
             self.cart.Shift(direction=1, disp=1))
-    
+
     @staticmethod
     def find_division(n, x_len, y_len):
         for f in range(int(n**0.5), 0, -1):
             if n % f == 0:
                 g = n // f
-            
+
                 if x_len % f == 0 and y_len % g == 0:
                     return [f, g]
                 if x_len % g == 0 and y_len % f == 0:
                     return [g, f]
-        
-        raise Exception("Can not arrange ({},{}) lattice on {} processors".format(x_len, y_len, n))
+
+        raise Exception(
+            "Could not arrange ({}, {}) lattice on {} processors".format(
+                x_len, y_len, n))
 
     def reset_to_eq(self):
-        self.data[...] = self.W[np.newaxis, np.newaxis, :] #broadcast, please.
+        self.data[...] = self.W[np.newaxis, np.newaxis, :]  #broadcast, please.
 
     def halo_copy(self):
         """copies data into the halo cells of all lattices"""
@@ -194,17 +205,17 @@ class Lattice:
         # out= option gives us zeros where the where= condition is not met (i.e. where rho = 0)
         return np.divide(j, rho, out=np.zeros_like(j), where=(rho != 0))
 
-    def f_eq(self, u=None):
+    def f_eq(self, rho=None, u=None):
         """m x n x i: equilibrium flow at each position (given current avg velocity)
         
         optional: prescribed velocity u
         """
-        rho = self.rho()
+        if rho is None: rho = self.rho()
         if u is None: u = self.u(rho=rho)
 
         cu = np.einsum('id,mnd->mni', self.C, u)
 
-        cu2 = cu ** 2
+        cu2 = cu**2
 
         u2 = np.sum(np.power(u, 2), axis=2, keepdims=True)
 
@@ -220,12 +231,31 @@ class Lattice:
 
         return self.W * np.multiply(rho, inside_term)
 
-    def collide(self, omega, prescribed_u=None):
+    def collide(self, omega=1, rho=None, u=None):
         # prescribed_u (optional) overrides the u calculated from the provided lattice
         # TODO - make this a function?
-        self.core += omega * (self.f_eq(prescribed_u) - self.core)
+        self.core += omega * (self.f_eq(rho, u) - self.core)
 
     def gather(self, data):
-        pool = np.empty([self.x_full_len, self.y_full_len] + list(data.shape[2:]))
-        self.comm.Gather(np.ascontiguousarray(data), pool, root=0)
+
+        # pool = np.empty([self.x_full_len, self.y_full_len] + list(data.shape[2:]))
+
+        telescope = np.empty([self.comm.Get_size()] + list(data.shape))
+
+        self.comm.Gather(np.ascontiguousarray(data), telescope, root=0)
+
+        data_x_len, data_y_len = data.shape[0:2]
+
+        pool = np.empty([
+            data_x_len * self.cart.dims[0], data_y_len * self.cart.dims[1],
+            *data.shape[2:]
+        ])
+
+        if self.rank == 0:
+            # is there an easier way to do this?
+            for r in range(telescope.shape[0]):
+                rc = self.cart.Get_coords(r)
+                pool[rc[0] * data_x_len:(rc[0] + 1) * data_x_len, rc[1] *
+                     data_y_len:(rc[1] + 1) * data_y_len] = telescope[r]
+
         return pool
