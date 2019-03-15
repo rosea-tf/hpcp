@@ -111,6 +111,8 @@ class Lattice:
 
     @staticmethod
     def find_division(n, x_len, y_len):
+        #TODO: allow uneven cells
+
         for f in range(int(n**0.5), 0, -1):
             if n % f == 0:
                 g = n // f
@@ -220,11 +222,7 @@ class Lattice:
         u2 = np.sum(np.power(u, 2), axis=2, keepdims=True)
 
         inside_term = 1 + (3 * cu) + (9 / 2) * cu2 - (3 / 2) * u2
-        # print ('cu', cu.shape)
-        # print ('cu2', cu2.shape)
-        # print ('u', u.shape)
-        # print ('u2', u2.shape)
-        # print ('it', inside_term.shape)
+
         # for the rest channel, these terms should drop out
         assert cu[0].all() == 0
         assert cu2[0].all() == 0
@@ -246,6 +244,7 @@ class Lattice:
 
         data_x_len, data_y_len = data.shape[0:2]
 
+        #TODO - this (and some other bits) won't work if cells are uneven
         pool = np.empty([
             data_x_len * self.cart.dims[0], data_y_len * self.cart.dims[1],
             *data.shape[2:]
