@@ -8,8 +8,21 @@ class Lattice:
 
     (Note: north is an INCREASE, so the origin (0,0) is in the lower-left corner)
 
-    """
+    Initialises a lattice with equilibrium conditions
 
+    INITIALISATION INPUTS
+
+        lattice_dims: [int x, int y]
+            The total size of the lattice being simulated
+
+        grid_dims: [int m, int n], optional
+            How to arrange the grid of cells on the available processors
+            If this is omitted, an arrangement which minimises the amount of halo copy operations
+            will be calculated automatically
+
+        wall_fn: (x, y) -> bool IsWallCell
+
+    """
     # a convenient dictionary allowing us to refer to channels by direction, rather than number
     DIR = {
         'R': 0,
@@ -37,38 +50,59 @@ class Lattice:
     W = np.array([4 / 9] + [1 / 9] * 4 + [1 / 36] * 4)
 
     def __init__(self,
-                 x_full_len,
-                 y_full_len,
-                 x_node_qt=None,
-                 y_node_qt=None,
+                 lattice_dims,
+                 grid_dims=None,
                  wall_fn=None,
                  drag_fn=None):
-        """
-        Initialises a lattice with equilibrium conditions
-
-        wall_fn: (x, y) -> bool IsWallCell
-
-        """
 
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
+        self.grid_size = self.comm.Get_size()
 
-        if x_node_qt is None or y_node_qt is None:
-            # calculate best fit
-            x_node_qt, y_node_qt = self.find_division(self.comm.Get_size(),
-                                                      x_full_len, y_full_len)
+        self.lattice_dims = lattice_dims
 
-        # calculate the size of the local node
-        assert x_full_len % x_node_qt == 0, "Lattice x-dimension not evenly divisible by number of nodes"
-        assert y_full_len % y_node_qt == 0, "Lattice y-dimension not evenly divisible by number of nodes"
+        # print ("division found")
+        # if user has not explicitly provided a grid size, then calculate the best one
+        if grid_dims is None:
+            grid_dims = self.find_arrangement(self.grid_size, *lattice_dims)
 
-        self.x_full_len, self.y_full_len = x_full_len, y_full_len
+        assert np.prod(
+            grid_dims
+        ) == self.grid_size, "Specified grid size does not match the number of processors in use"
 
-        x_len, y_len = x_full_len // x_node_qt, y_full_len // y_node_qt
+        self.grid_dims = grid_dims
 
+        # we want periodicity in all dimensions
+        self.cart = self.comm.Create_cart(grid_dims, periods=[True, True])
+
+        # calculate length in each dimension (will be identical for all cells except the last on each axis)
+        self.cell_dims_std = np.ceil(
+            np.divide(self.lattice_dims, self.grid_dims)).astype(int)
+
+        # calculate start position in each dimension
+        cell_start = np.multiply(self.cart.coords, self.cell_dims_std)
+
+        # vary cell length for last on each axis
+        cell_dim = np.where(
+            self.cart.coords < np.subtract(self.cart.dims, 1),
+            self.cell_dims_std, self.lattice_dims -
+            (np.subtract(self.cart.dims, 1) * self.cell_dims_std))
+
+        # gather information about all grid cells
+        self.cell_starts = np.empty([self.grid_size, 2], dtype=np.int)
+        self.cell_dims = np.empty([self.grid_size, 2], dtype=np.int)
+        self.comm.Allgather(cell_start, self.cell_starts)
+        self.comm.Allgather(cell_dim, self.cell_dims)
+
+        assert not np.any(
+            self.cell_dims == 0
+        ), "Some nodes have nothing to do. Try a larger grid (or fewer nodes)."
+
+        # set up array representing the lattice
         # we add two to each dimension to allow for the halo
         self.data = np.broadcast_to(self.W[np.newaxis, np.newaxis, :],
-                                    (x_len + 2, y_len + 2, self.NC)).copy()
+                                    np.append(np.add(cell_dim, 2),
+                                              self.NC)).copy()
 
         # the data from this lattice, excluding the halo cells
         self.core = self.data[1:-1, 1:-1, :]
@@ -77,32 +111,27 @@ class Lattice:
 
         # we will need these contiguous arrays to receive column data from neighbour cells
         # (rows are already contiguous)
-        self.halo_ydec_recvr = np.empty([x_len + 2, 1, self.NC])
-        self.halo_yinc_recvr = np.empty([x_len + 2, 1, self.NC])
+        self.halo_ydec_recvr = np.empty([cell_dim[0] + 2, 1,
+                                         self.NC])  #1, not 0, right?
+        self.halo_yinc_recvr = np.empty([cell_dim[0] + 2, 1, self.NC])  #TODO
 
-        # we want periodicity in all dimensions - for now
-        # the next line will throw an exception if x_node_qt * y_node_qt != comm.Get_size()
-        self.cart = self.comm.Create_cart([x_node_qt, y_node_qt],
-                                          periods=[True, True])
-
-        # calculate range of x and y in the full lattice represented by this node
-        x_coord, y_coord = self.cart.coords
-        self.x_range = np.arange(x_coord * x_len, (x_coord + 1) * x_len)
-        self.y_range = np.arange(y_coord * y_len, (y_coord + 1) * y_len)
+        self.cell_ranges = [
+            np.arange(cell_start[d], cell_start[d] + cell_dim[d])
+            for d in [0, 1]
+        ]
 
         # work out the locations of dry cells (if any) in this node
         if wall_fn is None:
             self.walls = None
         else:
             self.walls = wall_fn(
-                *np.meshgrid(self.x_range, self.y_range, indexing='ij'))
+                *np.meshgrid(*self.cell_ranges, indexing='ij'))
 
         # velocity of walls (for the sliding lid thing)
         if drag_fn is None:
             self.drag = None
         else:
-            self.drag = drag_fn(
-                *np.meshgrid(self.x_range, self.y_range, indexing='ij'))
+            self.drag = drag_fn(*np.meshgrid(*self.cell_ranges, indexing='ij'))
 
         # these are 2-tuples which each store the rank of the previous (next) lattice on the [x, y] axis
         self.rank_prev, self.rank_next = zip(
@@ -110,24 +139,35 @@ class Lattice:
             self.cart.Shift(direction=1, disp=1))
 
     @staticmethod
-    def find_division(n, x_len, y_len):
-        #TODO: allow uneven cells
+    def find_arrangement(procs, x_len, y_len):
+        """
+        automatically finds the best grid arrangement, given an available number of processors and a lattice size
+        """
 
-        for f in range(int(n**0.5), 0, -1):
-            if n % f == 0:
-                g = n // f
+        min_ghosts = np.inf
+        best_division = None
 
-                if x_len % f == 0 and y_len % g == 0:
-                    return [f, g]
-                if x_len % g == 0 and y_len % f == 0:
-                    return [g, f]
+        # try each possible factorisation [f,g] of the # processors
+        for f in range(int(procs**0.5), 0, -1):
+            if procs % f == 0:
+                g = procs // f
 
-        raise Exception(
-            "Could not arrange ({}, {}) lattice on {} processors".format(
-                x_len, y_len, n))
+                # try dividing lattice both f*g and g*f
+                for m, n in [[f, g], [g, f]]:
+
+                    # actual number will be this * 2
+                    ghosts = (m * y_len) + (n * x_len)
+
+                    if ghosts < min_ghosts:
+                        min_ghosts = ghosts
+                        best_division = [m, n]
+
+        return best_division
 
     def reset_to_eq(self):
-        self.data[...] = self.W[np.newaxis, np.newaxis, :]  #broadcast, please.
+        """resets all channel occupation numbers back to equilibrium values"""
+        self.data[...] = self.W[np.newaxis,
+                                np.newaxis, :]  # broadcast, please.
 
     def halo_copy(self):
         """copies data into the halo cells of all lattices"""
@@ -165,17 +205,21 @@ class Lattice:
         self.data[:, -1:] = self.halo_yinc_recvr
 
     def stream(self, steps=1):
-        """roll each of the channels. This uses periodic boundary conditions everywhere."""
+        """
+        stream each of the channels in a cell. 
+        This uses periodic boundary conditions everywhere.
+        """
 
-        n = np.sum(self.data)
+        n = np.sum(self.data) #TODO - move out
 
-        for i in range(1, self.NC):  #we don't need to do this for channel zero
+        # we can start at channel 1, since 0 is the rest channel
+        for i in range(1, self.NC):
             # channels move to like channels!
             self.data[:, :, i] = np.roll(
                 self.data[:, :, i], self.C[i] * steps, axis=(0, 1))
 
         if self.walls is not None:
-            # bounce channels backward
+            # bounce channels backward if they are at a dry cell
             self.core[self.walls] = self.core[self.walls][:, self.C_reflection]
 
             # are walls moving?
@@ -185,23 +229,17 @@ class Lattice:
         assert np.isclose(n, np.sum(self.data))
 
     def rho(self):
-        """m x n: density at every position"""
-        rho = np.sum(self.core, axis=2, keepdims=True)
-
-        return rho
+        """m x n: density at each point"""
+        return np.sum(self.core, axis=2, keepdims=True)
 
     def j(self):
-        """2 x m x n: density * velocity at each point"""
-        j = np.einsum('mni,id->mnd', self.core, self.C)
+        """m x n x 2: momentum density at each point"""
+        return np.einsum('mni,id->mnd', self.core, self.C)
 
-        return j
-
-    def u(self, core=True, rho=None):
+    def u(self, rho=None):
         """m x n x 2: average velocity at each point"""
-        #calculate rho
         if rho is None:
-            rho = self.rho(
-            )  #should have core in here, but will get rid of this
+            rho = self.rho()  
         j = self.j()
 
         # out= option gives us zeros where the where= condition is not met (i.e. where rho = 0)
@@ -231,30 +269,37 @@ class Lattice:
 
     def collide(self, omega=1, rho=None, u=None):
         # prescribed_u (optional) overrides the u calculated from the provided lattice
-        # TODO - make this a function?
         self.core += omega * (self.f_eq(rho, u) - self.core)
 
     def gather(self, data):
+        depth = data.shape[2]
 
-        # pool = np.empty([self.x_full_len, self.y_full_len] + list(data.shape[2:]))
+        # gather all nodes in 1D form array
+        telescope = np.empty(
+            [self.grid_size,
+             np.prod(self.cell_dims_std), depth])
 
-        telescope = np.empty([self.comm.Get_size()] + list(data.shape))
+        # pad out any that are undersized (unpredictable results, otherwise)
+        self.comm.Gather(
+            np.ascontiguousarray(
+                np.resize(data, [*self.cell_dims_std, depth])),
+            telescope,
+            root=0)
 
-        self.comm.Gather(np.ascontiguousarray(data), telescope, root=0)
-
-        data_x_len, data_y_len = data.shape[0:2]
-
-        #TODO - this (and some other bits) won't work if cells are uneven
-        pool = np.empty([
-            data_x_len * self.cart.dims[0], data_y_len * self.cart.dims[1],
-            *data.shape[2:]
-        ])
+        # this will hold the final results
+        pool = np.empty([*self.lattice_dims, depth])
 
         if self.rank == 0:
-            # is there an easier way to do this?
-            for r in range(telescope.shape[0]):
-                rc = self.cart.Get_coords(r)
-                pool[rc[0] * data_x_len:(rc[0] + 1) * data_x_len, rc[1] *
-                     data_y_len:(rc[1] + 1) * data_y_len] = telescope[r]
+
+            for r in range(self.grid_size):
+
+                # cut each cell down to its original size, then reshape into HxW
+                tele_input = telescope[r, :np.prod(self.cell_dims[r])].reshape(
+                    *self.cell_dims[r], depth)
+
+                # paste it into the final results pool at the appropriate position
+                pool[self.cell_starts[r, 0]:self.cell_starts[r, 0] +
+                     self.cell_dims[r, 0], self.cell_starts[r, 1]:self.
+                     cell_starts[r, 1] + self.cell_dims[r, 1]] = tele_input
 
         return pool
