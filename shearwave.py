@@ -78,7 +78,7 @@ for t in range(args.timesteps):
         u_snapshot = lat.gather(lat.u())
         if rank == 0:
 
-            # sine wave pattern should be is consistent across all x
+            # sine wave pattern should be consistent across all x
             assert np.isclose(u_snapshot, u_snapshot[0]).all()
 
             # with this asserted, we can select from only one x position

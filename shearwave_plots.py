@@ -126,9 +126,9 @@ ax.plot_surface(
     yy,
     tt,
     amplitude_hist_1 / epsilon,
+    cmap=cm.get_cmap('coolwarm'),
     rstride=1,
     cstride=1,
-    cmap=cm.coolwarm,
     linewidth=0,
     antialiased=True)
 ax.set_title('$\omega={}$'.format(omega1))
@@ -144,9 +144,9 @@ ax.plot_surface(
     yy,
     tt,
     amplitude_hist_2 / epsilon,
+    cmap=cm.get_cmap('coolwarm'),
     rstride=1,
     cstride=1,
-    cmap=cm.coolwarm,
     linewidth=0,
     antialiased=True)
 ax.set_title('$\omega={}$'.format(omega2))
