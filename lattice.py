@@ -164,6 +164,18 @@ class Lattice:
 
         return best_division
 
+    def print_info(self):
+        print("Simulating {} lattice using a {} process grid".format(
+            self.lattice_dims, self.cart.dims))
+        print("Cell lengths (x): {}".format([
+            self.cell_dims[j, 0] for j in range(self.grid_size)
+            if self.cart.Get_coords(j)[1] == 0
+        ]))
+        print("Cell lengths (y): {}".format([
+            self.cell_dims[j, 1] for j in range(self.grid_size)
+            if self.cart.Get_coords(j)[0] == 0
+        ]))
+
     def reset_to_eq(self):
         """resets all channel occupation numbers back to equilibrium values"""
         self.data[...] = self.W[np.newaxis,
@@ -210,7 +222,7 @@ class Lattice:
         This uses periodic boundary conditions everywhere.
         """
 
-        n = np.sum(self.data) #TODO - move out
+        n = np.sum(self.data)  #TODO - move out
 
         # we can start at channel 1, since 0 is the rest channel
         for i in range(1, self.NC):
@@ -239,7 +251,7 @@ class Lattice:
     def u(self, rho=None):
         """m x n x 2: average velocity at each point"""
         if rho is None:
-            rho = self.rho()  
+            rho = self.rho()
         j = self.j()
 
         # out= option gives us zeros where the where= condition is not met (i.e. where rho = 0)
