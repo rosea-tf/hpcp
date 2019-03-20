@@ -3,7 +3,7 @@ Simulation of couette flow
 
 @author: AlexR
 """
-#%% SETUP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%% SETUP
 
 import numpy as np
 from mpi4py import MPI
@@ -13,8 +13,9 @@ import argparse
 import os
 import _pickle as pickle
 import gzip
+import time
 
-# %% PARSE COMMAND LINE ARGUMENTS
+#%% PARSE COMMAND LINE ARGUMENTS
 
 parser = argparse.ArgumentParser()
 parser.add_argument("output", type=str, help="output filename")
@@ -31,10 +32,10 @@ parser.add_argument(
 parser.add_argument("--omega", type=float, default=1.0)
 
 parser.add_argument(
-    "--periodic_x",
-    type=bool,
-    default=True,
-    help="set False to create walls at sides (i.e. a box)")
+    "--wall_x",
+    dest='wall_x',
+    action='store_true',
+    help="creates walls at sides (i.e. a box)")
 parser.add_argument(
     "--ux_lid",
     type=float,
@@ -45,9 +46,18 @@ parser.add_argument(
     type=float,
     default=0,
     help="period (timesteps) of sine wave wobble for lid (0 for none)")
+parser.add_argument(
+    "--timeit",
+    dest='timeit',
+    action='store_true',
+    help="outputs time taken (rather than lattice data)")
+
 args = parser.parse_args()
 
 # %% SETUP
+
+t0 = time.time()
+t_copy_total = 0.0
 
 UY_STRENGTH = 0.1
 
@@ -59,7 +69,7 @@ t_hist = np.arange(args.timesteps, step=args.interval)
 grid_dims = [args.grid_x, args.grid_y
              ] if args.grid_x is not None and args.grid_y is not None else None
 
-if args.periodic_x:
+if not args.wall_x:
     # walls (a row of dry cells) at top and bottom
     wall_fn = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
 else:
@@ -85,7 +95,10 @@ flow_hist = np.empty([args.timesteps // args.interval, lat_x, lat_y, 2])
 #%% SIMULATION
 
 for t in range(args.timesteps):
+    t_precopy = time.time()
     lat.halo_copy()
+    t_copy_total += (time.time() - t_precopy)
+
     lat.stream()
     lat.collide(omega=omega)
 
@@ -112,26 +125,38 @@ for t in range(args.timesteps):
         top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
 
     # record data
-    if t % args.interval == 0:
+    if t % args.interval == 0 and not args.timeit:
         u_snapshot = lat.gather(lat.u())
 
         if rank == 0:
             flow_hist[t // args.interval] = u_snapshot
 
-# %% SAVE TO FILE
-if rank == 0:  #TODO
-    # reconstruct walls
-    walls = np.array([[x, y] for x in np.arange(lat_x)
-                      for y in np.arange(lat_y) if wall_fn(x, y)])
+t_total = (time.time() - t0)
 
+if args.timeit:
+    t_gather = np.empty([size, 2])
+    comm.Gather(np.array([t_total, t_copy_total]), t_gather, root=0)
+
+#%% SAVE TO FILE
+if rank == 0:
     pickle_path = os.path.join('.', 'pickles')
     if not os.path.exists(pickle_path):
         os.mkdir(pickle_path)
+    
+    if not args.timeit:
+        # reconstruct walls
+        walls = np.array([[x, y] for x in np.arange(lat_x)
+                        for y in np.arange(lat_y) if wall_fn(x, y)])
 
-    d = dict(
-        ((k, eval(k))
-         for k in ['lat_x', 'lat_y', 'omega', 't_hist', 'flow_hist', 'walls']))
+        d = dict(
+            ((k, eval(k))
+            for k in ['lat_x', 'lat_y', 'omega', 't_hist', 'flow_hist', 'walls']))
 
-    pickle.dump(d, gzip.open(os.path.join(pickle_path, args.output + '.pkl.gz'), 'wb'))
+        pickle.dump(d, gzip.open(os.path.join(pickle_path, args.output + '.pkl.gz'), 'wb'))
 
-    print("Results saved to ./pickles/{}".format(args.output))
+        print("Results saved to ./pickles/{}.pkl.gz".format(args.output))
+    
+    else:
+        pickle.dump(t_gather, open(os.path.join(pickle_path, args.output + '_time.pkl'), 'wb'))
+        print("Results saved to ./pickles/{}_time.pkl".format(args.output))
+        

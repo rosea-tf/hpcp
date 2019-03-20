@@ -10,7 +10,10 @@ import _pickle as pickle
 
 file_list = ['couette', 'couette_v', 'cavity', 'cavity_v']
 
-res = [pickle.load(gzip.open(os.path.join('pickles', f + '.pkl.gz'), 'rb')) for f in file_list]
+res = [
+    pickle.load(gzip.open(os.path.join('pickles', f + '.pkl.gz'), 'rb'))
+    for f in file_list
+]
 
 # data that should be the same across pickles
 x = np.arange(res[0]['lat_x'])
@@ -45,8 +48,6 @@ for ri, r in enumerate(res):
             linewidth=(300) * np.linalg.norm(r['flow_hist'][i], axis=2).T)
 
     plt.savefig(
-        './plots/{}.png'.format(file_list[ri]),
-        dpi=150,
-        bbox_inches='tight')
+        './plots/{}.png'.format(file_list[ri]), dpi=150, bbox_inches='tight')
 
 print("Plotting complete. Results saved in ./plots/")
