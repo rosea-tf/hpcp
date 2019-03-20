@@ -12,50 +12,60 @@ import matplotlib.pyplot as plt
 import argparse
 import os
 import _pickle as pickle
+import gzip
 
-# parser = argparse.ArgumentParser()
-# parser.add_argument("output", type=str, help="output filename")
-# parser.add_argument("lat_x", type=int, help="x-length of lattice to simulate")
-# parser.add_argument("lat_y", type=int, help="y-length of lattice to simulate")
-# parser.add_argument("--grid_x", type=int, help="x-length of process grid")
-# parser.add_argument("--grid_y", type=int, help="y-length of process grid")
-# parser.add_argument("--timesteps", type=int, default=1000)
-# parser.add_argument(
-#     "--interval",
-#     type=int,
-#     help="number of timesteps between data recordings",
-#     default=10)
-# parser.add_argument("--omega", type=float, default=1.0)
-# parser.add_argument("--epsilon", type=float, default=0.01)
-# args = parser.parse_args()
+# %% PARSE COMMAND LINE ARGUMENTS
 
+parser = argparse.ArgumentParser()
+parser.add_argument("output", type=str, help="output filename")
+parser.add_argument("lat_x", type=int, help="x-length of lattice to simulate")
+parser.add_argument("lat_y", type=int, help="y-length of lattice to simulate")
+parser.add_argument("--grid_x", type=int, help="x-length of process grid")
+parser.add_argument("--grid_y", type=int, help="y-length of process grid")
+parser.add_argument("--timesteps", type=int, default=500)
+parser.add_argument(
+    "--interval",
+    type=int,
+    help="number of timesteps between data recordings",
+    default=50)
+parser.add_argument("--omega", type=float, default=1.0)
 
-# %%
-class C:
-    pass
+parser.add_argument(
+    "--periodic_x",
+    type=bool,
+    default=True,
+    help="set False to create walls at sides (i.e. a box)")
+parser.add_argument(
+    "--ux_lid",
+    type=float,
+    default=0.01,
+    help="horizontal speed of sliding lid")
+parser.add_argument(
+    "--uy_lid_period",
+    type=float,
+    default=0,
+    help="period (timesteps) of sine wave wobble for lid (0 for none)")
+args = parser.parse_args()
 
-args = C()
-args.timesteps = 500
-args.interval = 50
-args.lat_x = 100
-args.lat_y = 80
-args.grid_x = None
-args.grid_y = None
-args.omega = 1.0
-args.lidvelocity = 0.01
-args.output = 'couette.pkl'
+# %% SETUP
+
+UY_STRENGTH = 0.1
 
 lat_x = args.lat_x
 lat_y = args.lat_y
-lidvelocity = np.array([args.lidvelocity, 0])
 omega = args.omega
 t_hist = np.arange(args.timesteps, step=args.interval)
 
 grid_dims = [args.grid_x, args.grid_y
              ] if args.grid_x is not None and args.grid_y is not None else None
 
-# walls (a row of dry cells) at top and bottom
-wall_fn = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
+if args.periodic_x:
+    # walls (a row of dry cells) at top and bottom
+    wall_fn = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
+else:
+    # optionally, walls at the sides as well
+    wall_fn = lambda x, y:  np.logical_or.reduce(
+        [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1])
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -64,9 +74,11 @@ size = comm.Get_size()
 # set up the lattice
 lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
 
+# this will only be used by cells on the top of the grid
+top_wall = lat.core[:, -1:, :]
+
 if rank == 0:
     lat.print_info()
-
 
 flow_hist = np.empty([args.timesteps // args.interval, lat_x, lat_y, 2])
 
@@ -80,40 +92,46 @@ for t in range(args.timesteps):
     # if it sits at the topmost edge, add sliding lid effect
     # bounceback has already occurred, so rho_wall will be calculated on 2x(7,4,8) instead of 2x(6,2,5)
     if lat.cart.coords[1] == lat.grid_dims[1] - 1:
-        
-        # good
-        # lidvelocity = np.array([args.lidvelocity, 0.001 * np.sin(2 * np.pi * t / 100)])
 
-        top_wall = lat.core[:, -1:, :]
+        # sine-wave wobble for the lid (if any)
+        uy_lid = 0 if args.uy_lid_period == 0 else args.ux_lid * UY_STRENGTH * np.sin(
+            2 * np.pi * t / args.uy_lid_period)
 
-        rho_wall = np.sum(top_wall[:, :, [0, 3, 1]] + (2 * top_wall[:, :, [7, 4, 8]]), axis=2, keepdims=True)  
+        # calculate final lid velocity
+        u_lid = np.array([
+            args.ux_lid,
+        ])
 
-        drag = 6 * lat.W * rho_wall * np.einsum('id,d->i', lat.C, lidvelocity)
+        rho_wall = np.sum(
+            top_wall[:, :, [0, 3, 1]] + (2 * top_wall[:, :, [7, 4, 8]]),
+            axis=2,
+            keepdims=True)
 
-        top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]] #not minus?
+        drag = 6 * lat.W * rho_wall * np.einsum('id,d->i', lat.C, u_lid)
 
+        top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
+
+    # record data
     if t % args.interval == 0:
         u_snapshot = lat.gather(lat.u())
 
         if rank == 0:
             flow_hist[t // args.interval] = u_snapshot
 
-
-# %%
-if rank == 0: #TODO
+# %% SAVE TO FILE
+if rank == 0:  #TODO
     # reconstruct walls
-    walls = np.array([[x, y] for x in np.arange(lat_x) for y in np.arange(lat_y)
-                    if wall_fn(x, y)])
+    walls = np.array([[x, y] for x in np.arange(lat_x)
+                      for y in np.arange(lat_y) if wall_fn(x, y)])
 
-    # save variables and exit
     pickle_path = os.path.join('.', 'pickles')
     if not os.path.exists(pickle_path):
         os.mkdir(pickle_path)
 
-    d = dict(((k, eval(k)) for k in [
-        'lat_x', 'lat_y', 'lidvelocity', 'omega', 't_hist', 'flow_hist', 'walls'
-    ]))
+    d = dict(
+        ((k, eval(k))
+         for k in ['lat_x', 'lat_y', 'omega', 't_hist', 'flow_hist', 'walls']))
 
-    pickle.dump(d, open(os.path.join(pickle_path, args.output), 'wb'))
+    pickle.dump(d, gzip.open(os.path.join(pickle_path, args.output + '.pkl.gz'), 'wb'))
 
     print("Results saved to ./pickles/{}".format(args.output))

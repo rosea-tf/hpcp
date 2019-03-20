@@ -1,31 +1,27 @@
-#%% CHARTING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-import numpy as np
-import argparse
-import _pickle as pickle
 import os
+import gzip
 
-res1 = pickle.load(open(os.path.join('pickles', 'couette.pkl'), 'rb'))
-res2 = pickle.load(open(os.path.join('pickles', 'couette_vibrate.pkl'), 'rb'))
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
 
-# load data from pickles
-x = np.arange(res1['lat_x'])
-y = np.arange(res1['lat_y'])
-t = res1['t_hist']
+import _pickle as pickle
+
+file_list = ['couette', 'couette_v', 'cavity', 'cavity_v']
+
+res = [pickle.load(gzip.open(os.path.join('pickles', f + '.pkl.gz'), 'rb')) for f in file_list]
+
+# data that should be the same across pickles
+x = np.arange(res[0]['lat_x'])
+y = np.arange(res[0]['lat_y'])
+t = res[0]['t_hist']
 yy, tt = np.meshgrid(y, t)
-walls = res1['walls']
-flow_hist = [res1['flow_hist'], res2['flow_hist']]
 
 plt.rcParams.update(plt.rcParamsDefault)
 
 #produce charts
-#i = 0: no wobble
-#i = 1: wobble
-for r in [0, 1]:
+for ri, r in enumerate(res):
 
     fig, axc = plt.subplots(3, 3, sharex=True, sharey=True, figsize=[10, 8])
 
@@ -40,16 +36,17 @@ for r in [0, 1]:
         ax[i].set_xticks([])
         ax[i].set_yticks([])
 
-        ax[i].scatter(*walls.T, marker='s', s=1, color='red')
+        ax[i].scatter(*r['walls'].T, marker='s', s=1, color='red')
 
         ax[i].streamplot(
             x,
             y,
-            *np.transpose(flow_hist[r][i], [2, 1, 0]),
-            linewidth=(300) * np.linalg.norm(flow_hist[r][i], axis=2).T)
+            *np.transpose(r['flow_hist'][i], [2, 1, 0]),
+            linewidth=(300) * np.linalg.norm(r['flow_hist'][i], axis=2).T)
 
     plt.savefig(
-        './plots/couette_{}.png'.format(r), dpi=150, bbox_inches='tight')
-
+        './plots/{}.png'.format(file_list[ri]),
+        dpi=150,
+        bbox_inches='tight')
 
 print("Plotting complete. Results saved in ./plots/")
