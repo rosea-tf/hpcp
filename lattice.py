@@ -22,6 +22,8 @@ class Lattice:
 
         wall_fn: (x, y) -> bool IsWallCell
 
+        drag_fn: (x, y) -> [ux, uy]
+
     """
     # a convenient dictionary allowing us to refer to channels by direction, rather than number
     DIR = {

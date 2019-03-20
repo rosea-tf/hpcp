@@ -17,7 +17,7 @@ args = parser.parse_args()
 
 # %%
 
-args.results1 = 'poseuille.pkl'
+# args.results1 = 'poiseuille.pkl'
 
 # %%
 
@@ -59,7 +59,7 @@ ax[1].legend()
 # y_range = np.arange(lat_y)
 # para_calc = (inflow / (2 * viscosity_calc)) * ((((lat_y / 2) ** 2)) - ((y_range - (lat_y / 2)) ** 2))
 
-plt.savefig('./plots/poseuille_half2d.png', dpi=150, bbox_inches='tight')
+plt.savefig('./plots/poiseuille_half2d.png', dpi=150, bbox_inches='tight')
 
 #%%
 fig, axc = plt.subplots(3, 3, sharex=True, sharey=True, figsize=[10, 8])
@@ -83,9 +83,9 @@ for i in range(9):
         *np.transpose(flow_hist[i], [2, 1, 0]),
         linewidth=(100) * np.linalg.norm(flow_hist[i], axis=2).T)
 
-plt.savefig('./plots/poseuille_streamtime.png', dpi=150, bbox_inches='tight')
+plt.savefig('./plots/poiseuille_streamtime.png', dpi=150, bbox_inches='tight')
 #%%
-fig = plt.figure(figsize=(10, 4))
+fig = plt.figure()
 
 # set up the axes for the first plot
 ax = fig.add_subplot(1, 1, 1, projection='3d')
@@ -105,7 +105,7 @@ ax.set_ylabel('$t$')
 ax.set_zlabel('$u_x$')
 
 plt.tight_layout()
-plt.savefig('./plots/poseuille_half3d.png', dpi=150, bbox_inches='tight')
+plt.savefig('./plots/poiseuille_half3d.png', dpi=150, bbox_inches='tight')
 
 
 print("Plotting complete. Results saved in ./plots/")

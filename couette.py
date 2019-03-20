@@ -1,5 +1,5 @@
 """
-Simulation of poseuille flow
+Simulation of couette flow
 
 @author: AlexR
 """
@@ -34,21 +34,20 @@ import _pickle as pickle
 class C:
     pass
 
-
 args = C()
-args.timesteps = 1000
-args.interval = 5
+args.timesteps = 500
+args.interval = 50
 args.lat_x = 100
 args.lat_y = 80
 args.grid_x = None
 args.grid_y = None
 args.omega = 1.0
-args.inflow = 0.01
-args.output = 'poiseuille.pkl'
+args.lidvelocity = 0.01
+args.output = 'couette.pkl'
 
 lat_x = args.lat_x
 lat_y = args.lat_y
-inflow = args.inflow
+lidvelocity = np.array([args.lidvelocity, 0])
 omega = args.omega
 t_hist = np.arange(args.timesteps, step=args.interval)
 
@@ -68,44 +67,40 @@ lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
 if rank == 0:
     lat.print_info()
 
-halfway_vel_hist = np.empty([args.timesteps // args.interval, lat_y, 2])
 
-flow_hist = np.empty([10, lat_x, lat_y, 2])
-flow_recordpoints = np.arange(
-    args.timesteps / (20 / 9), step=args.timesteps / 20, dtype=np.int)
+flow_hist = np.empty([args.timesteps // args.interval, lat_x, lat_y, 2])
 
 #%% SIMULATION
 
 for t in range(args.timesteps):
     lat.halo_copy()
     lat.stream()
+    lat.collide(omega=omega)
 
-    # get velocity from our cell
-    u = lat.u()
+    # if it sits at the topmost edge, add sliding lid effect
+    # bounceback has already occurred, so rho_wall will be calculated on 2x(7,4,8) instead of 2x(6,2,5)
+    if lat.cart.coords[1] == lat.grid_dims[1] - 1:
+        
+        # good
+        # lidvelocity = np.array([args.lidvelocity, 0.001 * np.sin(2 * np.pi * t / 100)])
 
-    # if it sits at the leftmost edge, prescribe its inflow
-    if lat.cart.coords[0] == 0:
-        u[0, :, 0] = inflow
-        u[0, :, 1] = 0  # ???
+        top_wall = lat.core[:, -1:, :]
 
-    lat.collide(omega=args.omega, u=u)
+        rho_wall = np.sum(top_wall[:, :, [0, 3, 1]] + (2 * top_wall[:, :, [7, 4, 8]]), axis=2, keepdims=True)  
 
-    # record flow at halfway point
+        drag = 6 * lat.W * rho_wall * np.einsum('id,d->i', lat.C, lidvelocity)
+
+        top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]] #not minus?
+
     if t % args.interval == 0:
         u_snapshot = lat.gather(lat.u())
 
         if rank == 0:
-            # collect data from "monitoring station" halfway down the channel
-            halfway_vel_hist[t // args.interval] = u_snapshot[lat_x // 2]
-
-    if np.isin(t, flow_recordpoints):
-        u_snapshot = lat.gather(lat.u())
-        if rank == 0:
-            flow_hist[np.where(flow_recordpoints == t)] = u_snapshot
+            flow_hist[t // args.interval] = u_snapshot
 
 
 # %%
-if rank == 0:
+if rank == 0: #TODO
     # reconstruct walls
     walls = np.array([[x, y] for x in np.arange(lat_x) for y in np.arange(lat_y)
                     if wall_fn(x, y)])
@@ -116,8 +111,7 @@ if rank == 0:
         os.mkdir(pickle_path)
 
     d = dict(((k, eval(k)) for k in [
-        'lat_x', 'lat_y', 'inflow', 'omega', 't_hist', 'halfway_vel_hist',
-        'flow_hist', 'flow_recordpoints', 'walls'
+        'lat_x', 'lat_y', 'lidvelocity', 'omega', 't_hist', 'flow_hist', 'walls'
     ]))
 
     pickle.dump(d, open(os.path.join(pickle_path, args.output), 'wb'))
