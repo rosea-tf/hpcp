@@ -3,7 +3,7 @@ Simulation of shear wave decay
 
 @author: AlexR
 """
-# SETUP
+#%% SETUP
 
 import numpy as np
 from mpi4py import MPI
@@ -11,7 +11,9 @@ import _pickle as pickle
 import argparse
 from lattice import Lattice
 import os
+import gzip
 
+#%%
 parser = argparse.ArgumentParser()
 parser.add_argument("output", type=str, help="output filename")
 parser.add_argument("lat_x", type=int, help="x-length of lattice to simulate")
@@ -28,27 +30,37 @@ parser.add_argument("--omega", type=float, default=1.0)
 parser.add_argument("--epsilon", type=float, default=0.01)
 args = parser.parse_args()
 
-t_hist = np.arange(args.timesteps, step=args.interval)
+#%% SET PARAMETERS
+lat_x = 400
+lat_y = 300
+epsilon = 0.01
+timesteps = 1000 #TODO
+rec_interval = 10
+omegas = [0.5, 0.75, 1.0, 1.25, 1.5]
+outfile = 'shearwave.pkl.gz'
+
+t_hist = np.arange(timesteps, step=rec_interval)
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-grid_dims = [args.grid_x, args.grid_y
-             ] if args.grid_x is not None and args.grid_y is not None else None
+try:
+    grid_dims = [
+        args.grid_x, args.grid_y
+    ] if args.grid_x is not None and args.grid_y is not None else None
+except:
+    grid_dims = None
 
 # set up the lattice
-lat = Lattice([args.lat_x, args.lat_y], grid_dims=grid_dims)
+lat = Lattice([lat_x, lat_y], grid_dims=grid_dims)
 
 if rank == 0:
     lat.print_info()
 
-omega = args.omega
-epsilon = args.epsilon
-
 lat.reset_to_eq()
 
-k = 2 * np.pi / lat.lattice_dims[1]
+k = 2 * np.pi / lat_y
 
 # initial velocity u_x
 u_x_sin = (epsilon * np.sin(k * lat.cell_ranges[1]))[np.newaxis, :]
@@ -64,58 +76,60 @@ del u_x_sin, u_y_sin
 lat.collide(u=u_sin)
 u_initial = lat.gather(lat.u())
 
-#find reference position for sin wave peak
-sin_peak_pos_y = np.argmax(u_initial[0, :, 0])  #r0
-
 #storing amplitude of sine wave (i.e. velocity) at each y position
-amplitude_hist = np.empty(
-    [args.timesteps // args.interval, lat.lattice_dims[1]])  #r0
+amplitude_hists = {omega: np.empty(
+    [timesteps // rec_interval, lat_y]) for omega in omegas}  #r0
 
-# SIMULATION
-for t in range(args.timesteps):
+# density_hist = {omega: np.empty(
+    # [timesteps // rec_interval, lat_y]) for omega in omegas}
 
-    if t % args.interval == 0:
-        u_snapshot = lat.gather(lat.u())
-        if rank == 0:
+#%% SIMULATION
+for omega in omegas:
+    lat.reset_to_eq()
+    # run collision operator once, feeding this prescribed u in
+    lat.collide(u=u_sin)
+    
+    # density_hist = density_hists[omega]
+    amplitude_hist = amplitude_hists[omega]
 
-            # sine wave pattern should be consistent across all x
-            assert np.isclose(u_snapshot, u_snapshot[0]).all()
+    for t in range(timesteps):
 
-            # with this asserted, we can select from only one x position
-            amplitude_hist[t // args.interval] = u_snapshot[0, :, 0]
+        if t % rec_interval == 0:
+            # rho_snapshot = lat.gather(lat.rho())
+            u_snapshot = lat.gather(lat.u())
+            
+            if rank == 0:
 
-    lat.halo_copy()
-    lat.stream()
-    lat.collide(omega=omega)
+                # sine wave pattern should be consistent across all x
+                assert np.isclose(u_snapshot, u_snapshot[0]).all()
 
-# CALCULATIONS
+                # with this asserted, we can select from only one x position
+                amplitude_hist[t // rec_interval] = u_snapshot[0, :, 0]
+                # density_hist[t // rec_interval] = rho_snapshot[0, :, 0]
+
+        lat.halo_copy()
+        lat.stream()
+        lat.collide(omega=omega)
+
+#%% CALCULATIONS
 
 if rank == 0:
-    # observed sine wave amplitude
-    amp_peak_ppn_hist = amplitude_hist[:, sin_peak_pos_y] / amplitude_hist[
-        0, sin_peak_pos_y]
-
-    # observed kinematic viscosity
-    viscosity_hist = -(1 / ((k**2) * (t_hist + 1))) * np.log(amp_peak_ppn_hist)
-
-    # theoretical viscosity
-    viscosity_calc = (1 / 3) * ((1 / omega) - (1 / 2))
-
-    # theoretical sine wive amplitude
-    alpha = viscosity_calc * (k**2)
-    amp_peak_ppn_calc = np.exp(-alpha * t_hist)
 
     # save variables and exit
     pickle_path = os.path.join('.', 'pickles')
     if not os.path.exists(pickle_path):
         os.mkdir(pickle_path)
 
-    d = dict(((k, eval(k)) for k in [
-        'omega', 'epsilon', 'u_initial', 't_hist', 'amplitude_hist',
-        'viscosity_hist', 'viscosity_calc', 'amp_peak_ppn_hist',
-        'amp_peak_ppn_calc'
+    d = dict(((v, eval(v)) for v in [
+        'lat_x', 'lat_y', 'omegas', 'epsilon', 'u_initial', 't_hist', 'k', 'amplitude_hists'
     ]))
 
-    pickle.dump(d, open(os.path.join(pickle_path, args.output), 'wb'))
 
-    print("Results saved to ./pickles/{}".format(args.output))
+    outpath = os.path.join(pickle_path, outfile)
+
+    pickle.dump(d, gzip.open(outpath, 'wb'))
+
+    print("Results saved to " + outpath)
+
+
+#%%
