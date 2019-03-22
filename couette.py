@@ -9,153 +9,134 @@ import numpy as np
 from mpi4py import MPI
 from lattice import Lattice
 import matplotlib.pyplot as plt
-import argparse
 import os
 import _pickle as pickle
 import gzip
 import time
+from utils import fetch_grid_dims
 
-#%% PARSE COMMAND LINE ARGUMENTS
+#%% SET PARAMETERS
 
-parser = argparse.ArgumentParser()
-parser.add_argument("output", type=str, help="output filename")
-parser.add_argument("lat_x", type=int, help="x-length of lattice to simulate")
-parser.add_argument("lat_y", type=int, help="y-length of lattice to simulate")
-parser.add_argument("--grid_x", type=int, help="x-length of process grid")
-parser.add_argument("--grid_y", type=int, help="y-length of process grid")
-parser.add_argument("--timesteps", type=int, default=500)
-parser.add_argument(
-    "--interval",
-    type=int,
-    help="number of timesteps between data recordings",
-    default=50)
-parser.add_argument("--omega", type=float, default=1.0)
+lat_x = 100
+lat_y = 80
+omega = 1.0
+timesteps = 500
 
-parser.add_argument(
-    "--wall_x",
-    dest='wall_x',
-    action='store_true',
-    help="creates walls at sides (i.e. a box)")
-parser.add_argument(
-    "--ux_lid",
-    type=float,
-    default=0.01,
-    help="horizontal speed of sliding lid")
-parser.add_argument(
-    "--uy_lid_period",
-    type=float,
-    default=0,
-    help="period (timesteps) of sine wave wobble for lid (0 for none)")
-parser.add_argument(
-    "--timeit",
-    dest='timeit',
-    action='store_true',
-    help="outputs time taken (rather than lattice data)")
+# recording interval
+interval_hf = 5
+interval_sp = 50
+maxints_sp = 9
 
-args = parser.parse_args()
+# lid velocity
+ux_lid = 0.01
+uy_lids = [0, 0.001]
+uy_period = 100
 
-# %% SETUP
+wall_fn_couette = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
+wall_fn_cavity = lambda x, y: np.logical_or.reduce(
+        [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1]
+        )
 
-t0 = time.time()
-t_copy_total = 0.0
+wall_fns = [wall_fn_couette, wall_fn_cavity]
+outfiles = ['couette.pkl.gz', 'cavity.pkl.gz']
 
-UY_STRENGTH = 0.1
+#%% SETUP
 
-lat_x = args.lat_x
-lat_y = args.lat_y
-omega = args.omega
-t_hist = np.arange(args.timesteps, step=args.interval)
+t_hist_hf = np.arange(timesteps, step=interval_hf)
 
-grid_dims = [args.grid_x, args.grid_y
-             ] if args.grid_x is not None and args.grid_y is not None else None
-
-if not args.wall_x:
-    # walls (a row of dry cells) at top and bottom
-    wall_fn = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
-else:
-    # optionally, walls at the sides as well
-    wall_fn = lambda x, y: np.logical_or.reduce(
-        [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1])
+t_hist_sp = np.arange(timesteps, step=interval_sp)
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# set up the lattice
-lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
+grid_dims = fetch_grid_dims()
 
-# this will only be used by cells on the top of the grid
-top_wall = lat.core[:, -1:, :]
+# run once without side walls, and once with them
+for method in [0, 1]:
 
-if rank == 0:
-    lat.print_info()
+    wall_fn = wall_fns[method]
+    outfile = outfiles[method]
 
-flow_hist = np.empty([args.timesteps // args.interval, lat_x, lat_y, 2])
+    # set up the lattice
+    lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
 
-#%% SIMULATION
+    # this will only be used by cells on the top of the grid
+    top_wall = lat.core[:, -1:, :]
 
-for t in range(args.timesteps):
-    t_precopy = time.time()
-    lat.halo_copy()
-    t_copy_total += (time.time() - t_precopy)
+    if rank == 0:
+        lat.print_info()
 
-    lat.stream()
-    lat.collide(omega=omega)
+    halfway_vel_hists = np.empty([2, timesteps // interval_hf, lat_y])
 
-    # if it sits at the topmost edge, add sliding lid effect
-    # bounceback has already occurred, so rho_wall will be calculated on 2x(7,4,8) instead of 2x(6,2,5)
-    if lat.cart.coords[1] == lat.grid_dims[1] - 1:
+    flow_hists = np.empty([2, timesteps // interval_sp, lat_x, lat_y, 2])
 
-        # sine-wave wobble for the lid (if any)
-        uy_lid = 0 if args.uy_lid_period == 0 else args.ux_lid * UY_STRENGTH * np.sin(
-            2 * np.pi * t / args.uy_lid_period)
+    u_lid = np.array([ux_lid, 0])
 
-        # calculate final lid velocity
-        u_lid = np.array([
-            args.ux_lid,
-        ])
+    #%% SIMULATION
+    for i_uy, uy_lid in enumerate(uy_lids):
 
-        rho_wall = np.sum(
-            top_wall[:, :, [0, 3, 1]] + (2 * top_wall[:, :, [7, 4, 8]]),
-            axis=2,
-            keepdims=True)
+        lat.reset_to_eq()
+        halfway_vel_hist = halfway_vel_hists[i_uy]
+        flow_hist = flow_hists[i_uy]
 
-        drag = 6 * lat.W * rho_wall * np.einsum('id,d->i', lat.C, u_lid)
+        for t in range(timesteps):
+            lat.halo_copy()
+            lat.stream()
+            lat.collide(omega=omega)
 
-        top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
+            # if it sits at the topmost edge, add sliding lid effect
+            # bounceback has already occurred, so rho_wall will be calculated on 2x(7,4,8) instead of 2x(6,2,5)
+            if lat.cart.coords[1] == lat.grid_dims[1] - 1:
 
-    # record data
-    if t % args.interval == 0 and not args.timeit:
-        u_snapshot = lat.gather(lat.u())
+                # sine-wave wobble for the lid (if any)
+                u_lid[1] = uy_lid * np.sin(2 * np.pi * t / uy_period)
 
-        if rank == 0:
-            flow_hist[t // args.interval] = u_snapshot
+                rho_wall = np.sum(
+                    top_wall[:, :, [0, 3, 1]] +
+                    (2 * top_wall[:, :, [7, 4, 8]]),
+                    axis=2,
+                    keepdims=True)
 
-t_total = (time.time() - t0)
+                drag = 6 * lat.W * rho_wall * np.einsum(
+                    'id,d->i', lat.C, u_lid)
 
-if args.timeit:
-    t_gather = np.empty([size, 2])
-    comm.Gather(np.array([t_total, t_copy_total]), t_gather, root=0)
+                top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
 
-#%% SAVE TO FILE
-if rank == 0:
-    pickle_path = os.path.join('.', 'pickles')
-    if not os.path.exists(pickle_path):
-        os.mkdir(pickle_path)
+            # record flow at halfway point
+            if t % interval_hf == 0:
+                u_snapshot = lat.gather(lat.u())
 
-    if not args.timeit:
+                if rank == 0:
+                    halfway_vel_hist[t // interval_hf] = u_snapshot[lat_x // 2, :, 0]
+
+            # record entire u lattice
+            if t % interval_sp == 0 and t < t_hist_sp[-1]:
+                u_snapshot = lat.gather(lat.u())
+
+                if rank == 0:
+                    flow_hist[t // interval_sp] = u_snapshot
+
+    #%% SAVE TO FILE
+    if rank == 0:
+
+        pickle_path = os.path.join('.', 'pickles')
+        if not os.path.exists(pickle_path):
+            os.mkdir(pickle_path)
+
         # reconstruct walls
         walls = np.array([[x, y] for x in np.arange(lat_x)
                           for y in np.arange(lat_y) if wall_fn(x, y)])
 
-        d = dict(((k, eval(k)) for k in
-                  ['lat_x', 'lat_y', 'omega', 't_hist', 'flow_hist', 'walls']))
+        d = dict(((k, eval(k)) for k in [
+            'lat_x', 'lat_y', 'omega', 't_hist_hf', 't_hist_sp',
+            'halfway_vel_hists', 'flow_hists', 'walls'
+        ]))
 
-        out_file = os.path.join(pickle_path, args.output + '.pkl.gz')
-        pickle.dump(d, gzip.open(out_file, 'wb'))
+        outpath = os.path.join(pickle_path, outfile)
 
-    else:
-        out_file = os.path.join(pickle_path, args.output + '.pkl')
-        pickle.dump(t_gather, open(out_file, 'wb'))
+        pickle.dump(d, gzip.open(outpath, 'wb'))
 
-    print("Results saved to {}".format(out_file))
+        print("Results saved to " + outpath)
+
+#%%
