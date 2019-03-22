@@ -15,26 +15,15 @@ import gzip
 
 #%%
 parser = argparse.ArgumentParser()
-parser.add_argument("output", type=str, help="output filename")
-parser.add_argument("lat_x", type=int, help="x-length of lattice to simulate")
-parser.add_argument("lat_y", type=int, help="y-length of lattice to simulate")
 parser.add_argument("--grid_x", type=int, help="x-length of process grid")
 parser.add_argument("--grid_y", type=int, help="y-length of process grid")
-parser.add_argument("--timesteps", type=int, default=1000)
-parser.add_argument(
-    "--interval",
-    type=int,
-    help="number of timesteps between data recordings",
-    default=10)
-parser.add_argument("--omega", type=float, default=1.0)
-parser.add_argument("--epsilon", type=float, default=0.01)
 args = parser.parse_args()
 
 #%% SET PARAMETERS
 lat_x = 400
 lat_y = 300
 epsilon = 0.01
-timesteps = 1000 #TODO
+timesteps = 1000  #TODO
 rec_interval = 10
 omegas = [0.5, 0.75, 1.0, 1.25, 1.5]
 outfile = 'shearwave.pkl.gz'
@@ -77,18 +66,20 @@ lat.collide(u=u_sin)
 u_initial = lat.gather(lat.u())
 
 #storing amplitude of sine wave (i.e. velocity) at each y position
-amplitude_hists = {omega: np.empty(
-    [timesteps // rec_interval, lat_y]) for omega in omegas}  #r0
+amplitude_hists = {
+    omega: np.empty([timesteps // rec_interval, lat_y])
+    for omega in omegas
+}  #r0
 
 # density_hist = {omega: np.empty(
-    # [timesteps // rec_interval, lat_y]) for omega in omegas}
+# [timesteps // rec_interval, lat_y]) for omega in omegas}
 
 #%% SIMULATION
 for omega in omegas:
     lat.reset_to_eq()
     # run collision operator once, feeding this prescribed u in
     lat.collide(u=u_sin)
-    
+
     # density_hist = density_hists[omega]
     amplitude_hist = amplitude_hists[omega]
 
@@ -97,7 +88,7 @@ for omega in omegas:
         if t % rec_interval == 0:
             # rho_snapshot = lat.gather(lat.rho())
             u_snapshot = lat.gather(lat.u())
-            
+
             if rank == 0:
 
                 # sine wave pattern should be consistent across all x
@@ -111,25 +102,21 @@ for omega in omegas:
         lat.stream()
         lat.collide(omega=omega)
 
-#%% CALCULATIONS
+#%% SAVE AND EXIT
 
 if rank == 0:
 
-    # save variables and exit
     pickle_path = os.path.join('.', 'pickles')
     if not os.path.exists(pickle_path):
         os.mkdir(pickle_path)
 
     d = dict(((v, eval(v)) for v in [
-        'lat_x', 'lat_y', 'omegas', 'epsilon', 'u_initial', 't_hist', 'k', 'amplitude_hists'
+        'lat_x', 'lat_y', 'omegas', 'epsilon', 'u_initial', 't_hist', 'k',
+        'amplitude_hists'
     ]))
-
 
     outpath = os.path.join(pickle_path, outfile)
 
     pickle.dump(d, gzip.open(outpath, 'wb'))
 
     print("Results saved to " + outpath)
-
-
-#%%

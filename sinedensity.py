@@ -9,17 +9,10 @@ import numpy as np
 from mpi4py import MPI
 from lattice import Lattice
 import matplotlib.pyplot as plt
-import argparse
 import os
 import _pickle as pickle
 import gzip
-
-# %%
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--grid_x", type=int, help="x-length of process grid")
-parser.add_argument("--grid_y", type=int, help="y-length of process grid")
-args = parser.parse_args()
+from utils import fetch_grid_dims
 
 #%% SET PARAMETERS
 lat_x = 400
@@ -33,12 +26,7 @@ outfile = 'sinedensity.pkl.gz'
 #%% SETUP
 t_hist = np.arange(timesteps, step=rec_interval)
 
-try:
-    grid_dims = [
-        args.grid_x, args.grid_y
-    ] if args.grid_x is not None and args.grid_y is not None else None
-except:
-    grid_dims = None
+grid_dims = fetch_grid_dims()
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

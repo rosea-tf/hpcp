@@ -74,7 +74,7 @@ if not args.wall_x:
     wall_fn = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
 else:
     # optionally, walls at the sides as well
-    wall_fn = lambda x, y:  np.logical_or.reduce(
+    wall_fn = lambda x, y: np.logical_or.reduce(
         [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1])
 
 comm = MPI.COMM_WORLD
@@ -142,21 +142,20 @@ if rank == 0:
     pickle_path = os.path.join('.', 'pickles')
     if not os.path.exists(pickle_path):
         os.mkdir(pickle_path)
-    
+
     if not args.timeit:
         # reconstruct walls
         walls = np.array([[x, y] for x in np.arange(lat_x)
-                        for y in np.arange(lat_y) if wall_fn(x, y)])
+                          for y in np.arange(lat_y) if wall_fn(x, y)])
 
-        d = dict(
-            ((k, eval(k))
-            for k in ['lat_x', 'lat_y', 'omega', 't_hist', 'flow_hist', 'walls']))
+        d = dict(((k, eval(k)) for k in
+                  ['lat_x', 'lat_y', 'omega', 't_hist', 'flow_hist', 'walls']))
 
-        pickle.dump(d, gzip.open(os.path.join(pickle_path, args.output + '.pkl.gz'), 'wb'))
+        out_file = os.path.join(pickle_path, args.output + '.pkl.gz')
+        pickle.dump(d, gzip.open(out_file, 'wb'))
 
-        print("Results saved to ./pickles/{}.pkl.gz".format(args.output))
-    
     else:
-        pickle.dump(t_gather, open(os.path.join(pickle_path, args.output + '_time.pkl'), 'wb'))
-        print("Results saved to ./pickles/{}_time.pkl".format(args.output))
-        
+        out_file = os.path.join(pickle_path, args.output + '.pkl')
+        pickle.dump(t_gather, open(out_file, 'wb'))
+
+    print("Results saved to {}".format(out_file))

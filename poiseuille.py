@@ -3,60 +3,39 @@ Simulation of poseuille flow
 
 @author: AlexR
 """
-#%% SETUP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%% IMPORTS
 
 import numpy as np
 from mpi4py import MPI
 from lattice import Lattice
 import matplotlib.pyplot as plt
-import argparse
 import os
 import _pickle as pickle
+import gzip
+from utils import fetch_grid_dims
 
-# parser = argparse.ArgumentParser()
-# parser.add_argument("output", type=str, help="output filename")
-# parser.add_argument("lat_x", type=int, help="x-length of lattice to simulate")
-# parser.add_argument("lat_y", type=int, help="y-length of lattice to simulate")
-# parser.add_argument("--grid_x", type=int, help="x-length of process grid")
-# parser.add_argument("--grid_y", type=int, help="y-length of process grid")
-# parser.add_argument("--timesteps", type=int, default=1000)
-# parser.add_argument(
-#     "--interval",
-#     type=int,
-#     help="number of timesteps between data recordings",
-#     default=10)
-# parser.add_argument("--omega", type=float, default=1.0)
-# parser.add_argument("--epsilon", type=float, default=0.01)
-# args = parser.parse_args()
+#%% SET PARAMETERS
+lat_x = 100
+lat_y = 80
+timesteps = 1000  #TODO
+interval_hf = 5  #between recordings of flow at halfway point
+interval_sp = 50  #between recordings for streamplot
+maxints_sp = 9  # number of streamplot frames to record
 
+omega = 1.0
 
-# %%
-class C:
-    pass
-
-
-args = C()
-args.timesteps = 1000
-args.interval = 5
-args.lat_x = 100
-args.lat_y = 80
-args.grid_x = None
-args.grid_y = None
-args.omega = 1.0
-args.inflow = 0.01
-args.output = 'poiseuille.pkl'
-
-lat_x = args.lat_x
-lat_y = args.lat_y
-inflow = args.inflow
-omega = args.omega
-t_hist = np.arange(args.timesteps, step=args.interval)
-
-grid_dims = [args.grid_x, args.grid_y
-             ] if args.grid_x is not None and args.grid_y is not None else None
-
+# prescribed inflow at the LHS
+inflow = 0.01
 # walls (a row of dry cells) at top and bottom
 wall_fn = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
+
+outfile = 'poiseuille.pkl.gz'
+
+grid_dims = fetch_grid_dims()
+
+#%% SETUP
+t_hist_hf = np.arange(timesteps, step=interval_hf)
+t_hist_sp = np.arange(interval_sp * maxints_sp, step=interval_sp)
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -68,15 +47,13 @@ lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
 if rank == 0:
     lat.print_info()
 
-halfway_vel_hist = np.empty([args.timesteps // args.interval, lat_y, 2])
+halfway_vel_hist = np.empty([timesteps // interval_hf, lat_y, 2])
 
-flow_hist = np.empty([10, lat_x, lat_y, 2])
-flow_recordpoints = np.arange(
-    args.timesteps / (20 / 9), step=args.timesteps / 20, dtype=np.int)
+flow_hist = np.empty([maxints_sp, lat_x, lat_y, 2])
 
 #%% SIMULATION
 
-for t in range(args.timesteps):
+for t in range(timesteps):
     lat.halo_copy()
     lat.stream()
 
@@ -88,27 +65,27 @@ for t in range(args.timesteps):
         u[0, :, 0] = inflow
         u[0, :, 1] = 0  # ???
 
-    lat.collide(omega=args.omega, u=u)
+    lat.collide(omega=omega, u=u)
 
     # record flow at halfway point
-    if t % args.interval == 0:
+    if t % interval_hf == 0:
         u_snapshot = lat.gather(lat.u())
 
         if rank == 0:
             # collect data from "monitoring station" halfway down the channel
-            halfway_vel_hist[t // args.interval] = u_snapshot[lat_x // 2]
+            halfway_vel_hist[t // interval_hf] = u_snapshot[lat_x // 2]
 
-    if np.isin(t, flow_recordpoints):
+    # record entire u lattice
+    if t % interval_sp == 0 and t < t_hist_sp[-1]:
         u_snapshot = lat.gather(lat.u())
         if rank == 0:
-            flow_hist[np.where(flow_recordpoints == t)] = u_snapshot
+            flow_hist[t // interval_sp] = u_snapshot
 
-
-# %%
+#%% SAVE AND EXIT
 if rank == 0:
     # reconstruct walls
-    walls = np.array([[x, y] for x in np.arange(lat_x) for y in np.arange(lat_y)
-                    if wall_fn(x, y)])
+    walls = np.array([[x, y] for x in np.arange(lat_x)
+                      for y in np.arange(lat_y) if wall_fn(x, y)])
 
     # save variables and exit
     pickle_path = os.path.join('.', 'pickles')
@@ -116,10 +93,14 @@ if rank == 0:
         os.mkdir(pickle_path)
 
     d = dict(((k, eval(k)) for k in [
-        'lat_x', 'lat_y', 'inflow', 'omega', 't_hist', 'halfway_vel_hist',
-        'flow_hist', 'flow_recordpoints', 'walls'
+        'lat_x', 'lat_y', 'inflow', 'omega', 't_hist_hf', 't_hist_sp',
+        'halfway_vel_hist', 'flow_hist', 'walls'
     ]))
 
-    pickle.dump(d, open(os.path.join(pickle_path, args.output), 'wb'))
+    outpath = os.path.join(pickle_path, outfile)
 
-    print("Results saved to ./pickles/{}".format(args.output))
+    pickle.dump(d, gzip.open(outpath, 'wb'))
+
+    print("Results saved to " + outpath)
+
+#%%

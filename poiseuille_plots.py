@@ -1,90 +1,59 @@
-#%% CHARTING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%% IMPORTS
 
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
+# from matplotlib.ticker import LinearLocator, FormatStrFormatter
 import numpy as np
-import argparse
 import _pickle as pickle
 import os
+import gzip
 
-# %%
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "results1", type=str, help="filename of first pickled results set")
-args = parser.parse_args()
+# %% SETUP
 
-# %%
+res = pickle.load(
+    gzip.open(os.path.join('pickles', 'poiseuille.pkl.gz'), 'rb'))
 
-# args.results1 = 'poiseuille.pkl'
+t_hist_hf = res['t_hist_hf']
+t_hist_sp = res['t_hist_sp']
+walls = res['walls']
 
-# %%
+halfway_vel_hist = res['halfway_vel_hist']
+flow_hist = res['flow_hist']
+lat_x = res['lat_x']
+lat_y = res['lat_y']
+inflow = res['inflow']
+x = np.arange(lat_x)
+y = np.arange(lat_y)
 
-res1 = pickle.load(open(os.path.join('pickles', args.results1), 'rb'))
-
-halfway_vel_hist = res1['halfway_vel_hist']
-walls = res1['walls']
-flow_recordpoints = res1['flow_recordpoints']
-flow_hist = res1['flow_hist']
-# make data
-x = np.arange(res1['lat_x'])
-y = np.arange(res1['lat_y'])
-t = res1['t_hist']
-yy, tt = np.meshgrid(y, t)
+yy, tt = np.meshgrid(y, t_hist_hf)
 
 plt.rcParams.update(plt.rcParamsDefault)
 
-# %% Evolution of flow over time, and parabola
+#%% Evolution of flow over time, and parabola
+plt.clf()
 fig, ax = plt.subplots(1, 2, sharey=True, figsize=[10, 4])
 
 ax[0].set_title('$u_x$ velocity over time')
 ax[0].set_xlabel('$t$')
 ax[0].set_ylabel('$u_x$')
-ax[0].plot(
-    halfway_vel_hist[:, res1['lat_y'] // 2, 0], label='Center of $y$-axis')
-ax[0].plot(
+ax[0].plot(t_hist_hf, halfway_vel_hist[:, lat_y // 2, 0], label='Center of $y$-axis')
+ax[0].plot(t_hist_hf, 
     np.mean(halfway_vel_hist[:, :, 0], axis=1), label='Average over $y$-axis')
 ax[0].legend()
 
 ax[1].set_title('Final $u_x$ velocity')
-ax[1].set_xlabel('$x$')
-ax[1].plot(halfway_vel_hist[-1, :, 0], label='Observed')
+ax[1].set_xlabel('$y$')
+ax[1].plot(y, halfway_vel_hist[-1, :, 0], label='Observed', alpha=0.5, linewidth=5)
+
+para_calc = (6 * inflow / ((lat_y - 1)**2)) * y * ((lat_y - 1) - y)
+
+ax[1].plot(para_calc, label='Calculated')
 ax[1].legend()
-
-# TODO: analytical solution!
-# plt.plot(para_calc * (0.015 / 50))
-# viscosity_calc = (1 / 3) * ((1 / omega) - (1 / 2))
-
-# y_range = np.arange(lat_y)
-# para_calc = (inflow / (2 * viscosity_calc)) * ((((lat_y / 2) ** 2)) - ((y_range - (lat_y / 2)) ** 2))
 
 plt.savefig('./plots/poiseuille_half2d.png', dpi=150, bbox_inches='tight')
 
-#%%
-fig, axc = plt.subplots(3, 3, sharex=True, sharey=True, figsize=[10, 8])
-
-for a in axc[-1]:
-    a.set_xlabel('$x$')
-for a in axc[:, 0]:
-    a.set_ylabel('$y$')
-
-ax = axc.reshape(-1)
-for i in range(9):
-    ax[i].set_title('t={}'.format(flow_recordpoints[i]))
-    ax[i].set_xticks([])
-    ax[i].set_yticks([])
-
-    ax[i].scatter(*walls.T, marker='s', s=1, color='red')
-
-    ax[i].streamplot(
-        x,
-        y,
-        *np.transpose(flow_hist[i], [2, 1, 0]),
-        linewidth=(100) * np.linalg.norm(flow_hist[i], axis=2).T)
-
-plt.savefig('./plots/poiseuille_streamtime.png', dpi=150, bbox_inches='tight')
-#%%
+#%% 3D REPRESENTATION
 fig = plt.figure()
 
 # set up the axes for the first plot
@@ -107,5 +76,29 @@ ax.set_zlabel('$u_x$')
 plt.tight_layout()
 plt.savefig('./plots/poiseuille_half3d.png', dpi=150, bbox_inches='tight')
 
+#%% STREAMPLOT
+plt.clf()
+fig, axc = plt.subplots(3, 3, sharex=True, sharey=True, figsize=[10, 8])
+
+for a in axc[-1]:
+    a.set_xlabel('$x$')
+for a in axc[:, 0]:
+    a.set_ylabel('$y$')
+
+ax = axc.reshape(-1)
+for i in range(9):
+    ax[i].set_title('t={}'.format(t_hist_sp[i]))
+    ax[i].set_xticks([])
+    ax[i].set_yticks([])
+
+    ax[i].scatter(*walls.T, marker='s', s=1, color='red')
+
+    ax[i].streamplot(
+        x,
+        y,
+        *np.transpose(flow_hist[i], [2, 1, 0]),
+        linewidth=(100) * np.linalg.norm(flow_hist[i], axis=2).T)
+
+plt.savefig('./plots/poiseuille_streamtime.png', dpi=150, bbox_inches='tight')
 
 print("Plotting complete. Results saved in ./plots/")
