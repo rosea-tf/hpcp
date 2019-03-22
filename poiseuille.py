@@ -15,9 +15,9 @@ import gzip
 from utils import fetch_grid_dims
 
 #%% SET PARAMETERS
-lat_x = 100
-lat_y = 80
-timesteps = 1000  #TODO
+lat_x = 400
+lat_y = 300
+timesteps = 5000  #TODO
 interval_hf = 5  #between recordings of flow at halfway point
 interval_sp = 50  #between recordings for streamplot
 maxints_sp = 9  # number of streamplot frames to record

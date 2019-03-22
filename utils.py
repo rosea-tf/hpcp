@@ -1,4 +1,21 @@
 import argparse
+import gzip
+import os
+import _pickle as pickle
+
+def pickle_path():
+    pickle_path = os.path.join('.', 'pickles')
+    if not os.path.exists(pickle_path):
+        os.mkdir(pickle_path)
+    return pickle_path
+
+def pickle_save(outfile, res):
+
+    outpath = os.path.join(pickle_path(), outfile)
+
+    pickle.dump(res, gzip.open(outpath, 'wb'))
+
+    print("Results saved to " + outpath)
 
 def fetch_grid_dims():
     parser = argparse.ArgumentParser()

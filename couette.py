@@ -17,8 +17,8 @@ from utils import fetch_grid_dims
 
 #%% SET PARAMETERS
 
-lat_x = 100
-lat_y = 80
+lat_x = 400
+lat_y = 300
 omega = 1.0
 timesteps = 500
 
