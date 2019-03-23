@@ -13,9 +13,13 @@ res = pickle.load(
     gzip.open(os.path.join('pickles', 'sinedensity.pkl.gz'), 'rb'))
 
 # make data
+MAX_SP = 400
+
 x = np.arange(res['lat_x'])
-t = res['t_hist']
-xx, tt = np.meshgrid(x, t)
+t_hist = res['t_hist']
+t_hist_sp = t_hist[:MAX_SP]
+xx, tt = np.meshgrid(x, t_hist_sp)
+
 
 # these will hold the summaries for the 2D plots
 density_peak_hist = {}
@@ -41,7 +45,7 @@ for omega in res['omegas']:
     surf = ax.plot_surface(
         xx,
         tt,
-        density_hist,
+        density_hist[:MAX_SP],
         rstride=1,
         cstride=1,
         cmap=cm.get_cmap('viridis'),
@@ -59,7 +63,7 @@ for omega in res['omegas']:
     ax.plot_surface(
         xx,
         tt,
-        velocity_hist,
+        velocity_hist[:MAX_SP],
         rstride=1,
         cstride=1,
         cmap=cm.get_cmap('coolwarm'),
@@ -83,7 +87,7 @@ ax[0].set_ylabel('$\\rho(x_{ref})$')
 for omega in res['omegas']:
     density_hist = res['density_hists'][omega]
     density_init_argmax = np.argmax(density_hist[0])
-    ax[0].plot(t, density_hist.std(axis=1)**2, label='$\omega={}$'.format(omega))
+    ax[0].plot(t_hist, density_hist.std(axis=1)**2, label='$\omega={}$'.format(omega))
     ax[0].ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
 
 ax[1].set_title('$Var(\mathbf{u}_x)$ over time')
@@ -92,14 +96,13 @@ ax[1].set_ylabel('$\mathbf{u}_x(x_{ref})$')
 
 for omega in res['omegas']:
     velocity_hist = res['velocity_hists'][omega]
-    ax[1].plot(t, velocity_hist.std(axis=1)**2, label='$\omega={}$'.format(omega))
+    ax[1].plot(t_hist, velocity_hist.std(axis=1)**2, label='$\omega={}$'.format(omega))
     ax[1].ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
 
 ax[1].legend()
 
 plt.tight_layout()
-plt.savefig(
-    './plots/sinedensity_2d.png'.format(omega), dpi=150, bbox_inches='tight')
+plt.savefig('./plots/sinedensity_2d.png', dpi=150, bbox_inches='tight')
 
 print("Plotting complete. Results saved in ./plots/")
 

@@ -18,7 +18,7 @@ from utils import fetch_grid_dims
 lat_x = 400
 lat_y = 300
 epsilon = 0.01
-timesteps = 1000
+timesteps = 5000
 rec_interval = 5
 omegas = [0.5, 1.0, 1.5]
 outfile = 'sinedensity.pkl.gz'
