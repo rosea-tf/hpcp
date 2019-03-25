@@ -17,9 +17,9 @@ from utils import fetch_grid_dims
 lat_x = 400
 lat_y = 300
 epsilon = 0.01
-timesteps = 1000  #TODO
-rec_interval = 10
-omegas = [0.5, 0.75, 1.0, 1.25, 1.5]
+timesteps = 10000
+rec_interval = 100
+omegas = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75]
 outfile = 'shearwave.pkl.gz'
 
 t_hist = np.arange(timesteps, step=rec_interval)

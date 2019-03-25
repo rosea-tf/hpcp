@@ -27,7 +27,7 @@ velocity_peak_hist = {}
 
 plt.rcParams.update(plt.rcParamsDefault)
 
-for omega in res['omegas']:
+for omega in [0.5]:
     density_hist = res['density_hists'][omega]
     velocity_hist = res['velocity_hists'][omega]
 
@@ -72,7 +72,7 @@ for omega in res['omegas']:
 
     plt.tight_layout()
     plt.savefig(
-        './plots/sinedensity_3d_{}.png'.format(omega),
+        './plots/sinedensity_3d.png',
         dpi=150,
         bbox_inches='tight')
 

@@ -119,7 +119,7 @@ y = np.arange(lat_y)
 yy, tt = np.meshgrid(y, t_hist)
 
 # set up the axes for the first plot
-for i, omega in enumerate([0.5, 1.0]):
+for i, omega in enumerate([0.25, 1.0]):
     ax = fig.add_subplot(1, 2, 1 + i, projection='3d')
 
     ax.plot_surface(

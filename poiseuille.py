@@ -15,11 +15,11 @@ import gzip
 from utils import fetch_grid_dims
 
 #%% SET PARAMETERS
-lat_x = 400
-lat_y = 300
-timesteps = 5000  #TODO
-interval_hf = 5  #between recordings of flow at halfway point
-interval_sp = 50  #between recordings for streamplot
+lat_x = 1000
+lat_y = 100
+timesteps = 20000  #TODO
+interval_hf = 50  #between recordings of flow at halfway point
+interval_sp = 200  #between recordings for streamplot
 maxints_sp = 9  # number of streamplot frames to record
 
 omega = 1.0
@@ -76,7 +76,7 @@ for t in range(timesteps):
             halfway_vel_hist[t // interval_hf] = u_snapshot[lat_x // 2]
 
     # record entire u lattice
-    if t % interval_sp == 0 and t < t_hist_sp[-1]:
+    if t % interval_sp == 0 and t <= t_hist_sp[-1]:
         u_snapshot = lat.gather(lat.u())
         if rank == 0:
             flow_hist[t // interval_sp] = u_snapshot

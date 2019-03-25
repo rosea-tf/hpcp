@@ -20,17 +20,17 @@ from utils import fetch_grid_dims
 lat_x = 400
 lat_y = 300
 omega = 1.0
-timesteps = 500
+timesteps = 20000
 
 # recording interval
-interval_hf = 5
-interval_sp = 50
+interval_hf = 20
+interval_sp = 200
 maxints_sp = 9
 
 # lid velocity
 ux_lid = 0.01
 uy_lids = [0, 0.001]
-uy_period = 100
+uy_period = 400
 
 wall_fn_couette = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
 wall_fn_cavity = lambda x, y: np.logical_or.reduce(
@@ -43,8 +43,7 @@ outfiles = ['couette.pkl.gz', 'cavity.pkl.gz']
 #%% SETUP
 
 t_hist_hf = np.arange(timesteps, step=interval_hf)
-
-t_hist_sp = np.arange(timesteps, step=interval_sp)
+t_hist_sp = np.arange(interval_sp * maxints_sp, step=interval_sp)
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -69,7 +68,7 @@ for method in [0, 1]:
 
     halfway_vel_hists = np.empty([2, timesteps // interval_hf, lat_y])
 
-    flow_hists = np.empty([2, timesteps // interval_sp, lat_x, lat_y, 2])
+    flow_hists = np.empty([2, maxints_sp, lat_x, lat_y, 2])
 
     u_lid = np.array([ux_lid, 0])
 
@@ -111,7 +110,7 @@ for method in [0, 1]:
                     halfway_vel_hist[t // interval_hf] = u_snapshot[lat_x // 2, :, 0]
 
             # record entire u lattice
-            if t % interval_sp == 0 and t < t_hist_sp[-1]:
+            if t % interval_sp == 0 and t <= t_hist_sp[-1]:
                 u_snapshot = lat.gather(lat.u())
 
                 if rank == 0:
