@@ -63,10 +63,9 @@ class Lattice:
 
         self.lattice_dims = lattice_dims
 
-        # print ("division found")
         # if user has not explicitly provided a grid size, then calculate the best one
         if grid_dims is None:
-            grid_dims = self.find_arrangement(self.grid_size, *lattice_dims)
+            grid_dims = self.opt_grid_dims(self.grid_size, *lattice_dims)
 
         assert np.prod(
             grid_dims
@@ -77,28 +76,29 @@ class Lattice:
         # we want periodicity in all dimensions
         self.cart = self.comm.Create_cart(grid_dims, periods=[True, True])
 
+        # work out the sequence of x-lengths and y-lengths for cells to cover the grid
+        self.cell_start_scheme, self.cell_dim_scheme = self.opt_cell_ranges(self.lattice_dims, self.grid_dims)
+
+        coords_list = [self.cart.Get_coords(c) for c in range(self.grid_size)]
+        
+        self.cell_starts = np.array([(self.cell_start_scheme[0][x], self.cell_start_scheme[1][y]) for x, y in coords_list])
+        
+        self.cell_dims = np.array([(self.cell_dim_scheme[0][x], self.cell_dim_scheme[1][y]) for x, y in coords_list])
+        
         # calculate length in each dimension (will be identical for all cells except the last on each axis)
-        self.cell_dims_std = np.ceil(
-            np.divide(self.lattice_dims, self.grid_dims)).astype(int)
+        self.cell_dims_max = np.max(self.cell_dims, axis=0)
 
-        # calculate start position in each dimension
-        cell_start = np.multiply(self.cart.coords, self.cell_dims_std)
-
-        # vary cell length for last on each axis
-        cell_dim = np.where(
-            self.cart.coords < np.subtract(self.cart.dims, 1),
-            self.cell_dims_std, self.lattice_dims -
-            (np.subtract(self.cart.dims, 1) * self.cell_dims_std))
-
-        # gather information about all grid cells
-        self.cell_starts = np.empty([self.grid_size, 2], dtype=np.int)
-        self.cell_dims = np.empty([self.grid_size, 2], dtype=np.int)
-        self.comm.Allgather(cell_start, self.cell_starts)
-        self.comm.Allgather(cell_dim, self.cell_dims)
+        # fetch values for this particular cell
+        cell_start = self.cell_starts[self.rank]
+        cell_dim = self.cell_dims[self.rank]
 
         assert not np.any(
-            self.cell_dims == 0
+            self.cell_dim_scheme == 0
         ), "Some nodes have nothing to do. Try a larger grid (or fewer nodes)."
+
+        # if self.rank == 0:
+            # rank zero will use this map for gathering later
+                # self.cell_sizes = 
 
         # set up array representing the lattice
         # we add two to each dimension to allow for the halo
@@ -141,7 +141,7 @@ class Lattice:
             self.cart.Shift(direction=1, disp=1))
 
     @staticmethod
-    def find_arrangement(procs, x_len, y_len):
+    def opt_grid_dims(procs, x_len, y_len):
         """
         automatically finds the best grid arrangement, given an available number of processors and a lattice size
         """
@@ -166,17 +166,44 @@ class Lattice:
 
         return best_division
 
+    @staticmethod
+    def opt_cell_ranges(lat_dims, grid_dims):
+        """
+        INPUTS
+            lat_dim: [int x, int y], np.array shape (2,)
+                the size of the entire lattice
+
+            grid_dim: [int m, int n], np.array shape (2,)
+                the size of the grid arrangement, where m * n = #processors
+        
+        OUTPUTS
+            cell_starts: np.array (m,n,2,)
+                for each cell at location i in m, j in n
+                the (x,y) lattice coordinates of its start position
+        """
+
+        cell_dims = [None, None]
+        cell_starts = [None, None]
+
+        for d in [0, 1]:
+        
+            int_quotient = lat_dims[d] // grid_dims[d]
+            
+            num_ints = grid_dims[d] * (int_quotient + 1) - lat_dims[d]
+
+            num_intplusones = grid_dims[d] - num_ints
+
+            cell_dims[d] = [int_quotient + 1] * num_intplusones + [int_quotient] * num_ints
+            cell_starts[d] = [sum(cell_dims[d][:i]) for i in range(len(cell_dims[d]))]
+
+        return cell_starts, cell_dims
+
+
     def print_info(self):
         print("Simulating {} lattice using a {} process grid".format(
             self.lattice_dims, self.cart.dims))
-        print("Cell lengths (x): {}".format([
-            self.cell_dims[j, 0] for j in range(self.grid_size)
-            if self.cart.Get_coords(j)[1] == 0
-        ]))
-        print("Cell lengths (y): {}".format([
-            self.cell_dims[j, 1] for j in range(self.grid_size)
-            if self.cart.Get_coords(j)[0] == 0
-        ]))
+        print("Cell lengths (x): {}".format(self.cell_dim_scheme[0]))
+        print("Cell lengths (y): {}".format(self.cell_dim_scheme[1]))
 
     def reset_to_eq(self):
         """resets all channel occupation numbers back to equilibrium values"""
@@ -291,12 +318,12 @@ class Lattice:
         # gather all nodes in 1D form array
         telescope = np.empty(
             [self.grid_size,
-             np.prod(self.cell_dims_std), depth])
+             np.prod(self.cell_dims_max), depth])
 
         # pad out any that are undersized (unpredictable results, otherwise)
         self.comm.Gather(
             np.ascontiguousarray(
-                np.resize(data, [*self.cell_dims_std, depth])),
+                np.resize(data, [*self.cell_dims_max, depth])),
             telescope,
             root=0)
 
