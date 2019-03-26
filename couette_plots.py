@@ -41,9 +41,10 @@ for method in methods:
 
 		# add a panel to 2d chart
 		ax2d = fig2d.add_subplot(1, 2, 1 + i_uy)
-		ax2d.plot(y[:-1], halfway_vel_hist[-1, :-1])
-		ax2d.set_xlabel('$y$')
-		ax2d.set_ylabel('$u_x$')
+		ax2d.plot(halfway_vel_hist[-1, :-1], y[:-1])
+		ax2d.set_ylabel('$y$')
+		ax2d.set_xlabel('$u_x$')
+		ax2d.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
 
 		# stream plot
 		fig, axc = plt.subplots(3, 3, sharex=True, sharey=True, figsize=[10, 8])

@@ -31,6 +31,29 @@ for omega in [0.5]:
     density_hist = res['density_hists'][omega]
     velocity_hist = res['velocity_hists'][omega]
 
+    # INITIAL PLOT
+    fig = plt.figure(figsize=(10, 4))
+    ax = fig.add_subplot(1, 2, 1)
+    ax.set_title('Initial density $\\rho$ (magnitude)')
+    ax.set_xlabel('$x$')
+    ax.set_ylabel('$u_x$')
+    ax.set_xticks([])
+    ax.plot(x, density_hist[0])
+
+    ax = fig.add_subplot(1, 2, 2)
+    ax.set_title('Initial density $\\rho$ (lattice)')
+    ax.set_xlabel('$x$')
+    ax.set_ylabel('$y$')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    im = ax.imshow(np.broadcast_to(density_hist[0, :, None], shape=(400,300)).T)
+    fig.colorbar(im)
+
+    fig.savefig(
+        './plots/sinedensity_initial.png',
+        dpi=150,
+        bbox_inches='tight')
+    
     #3D FIGURE
     fig = plt.figure(figsize=(10, 4))
 

@@ -11,10 +11,17 @@ from lattice import Lattice
 import matplotlib.pyplot as plt
 import time
 from utils import pickle_save
+import argparse
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
+
+parser = argparse.ArgumentParser()
+parser.add_argument("method", type=int, choices=[0,1,2], help="0: normal; 1: 1-dimensional grid; 2: larger grid, shorter time")
+args = parser.parse_args()
+
+method = args.method
 
 #%% SET PARAMETERS
 
@@ -40,54 +47,52 @@ outfile = 'time_{}.pkl.gz'
 # dimensions: method, process, t_0/t_end/computation/communcation/
 time_results = np.empty([3, size, 4])
 
-for method in [0, 1, 2]:
+#%% SETUP
+lat_x = lat_x_s[method]
+lat_y = lat_y_s[method]
+timesteps = timesteps_s[method]
+grid_dims = grid_dims_s[method]
 
-    #%% SETUP
-    lat_x = lat_x_s[method]
-    lat_y = lat_y_s[method]
-    timesteps = timesteps_s[method]
-    grid_dims = grid_dims_s[method]
+t_start = time.time()
+t_copy = 0.0
 
-    t_start = time.time()
-    t_copy = 0.0
+# set up the lattice
+lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
 
-    # set up the lattice
-    lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
+# this will only be used by cells on the top of the grid
+top_wall = lat.core[:, -1:, :]
 
-    # this will only be used by cells on the top of the grid
-    top_wall = lat.core[:, -1:, :]
+if rank == 0:
+    print("METHOD {}".format(method))
+    lat.print_info()
 
-    if rank == 0:
-        print("METHOD {}".format(method))
-        lat.print_info()
+#%% SIMULATION
+for t in range(timesteps):
+    t_precopy = time.time()
+    lat.halo_copy()
+    t_copy += (time.time() - t_precopy)
 
-    #%% SIMULATION
-    for t in range(timesteps):
-        t_precopy = time.time()
-        lat.halo_copy()
-        t_copy += (time.time() - t_precopy)
+    lat.stream()
+    lat.collide(omega=omega)
 
-        lat.stream()
-        lat.collide(omega=omega)
+    # if it sits at the topmost edge, add sliding lid effect
+    # bounceback has already occurred, so rho_wall will be calculated on 2x(7,4,8) instead of 2x(6,2,5)
+    if lat.cart.coords[1] == lat.grid_dims[1] - 1:
 
-        # if it sits at the topmost edge, add sliding lid effect
-        # bounceback has already occurred, so rho_wall will be calculated on 2x(7,4,8) instead of 2x(6,2,5)
-        if lat.cart.coords[1] == lat.grid_dims[1] - 1:
+        rho_wall = np.sum(
+            top_wall[:, :, [0, 3, 1]] + (2 * top_wall[:, :, [7, 4, 8]]),
+            axis=2,
+            keepdims=True)
 
-            rho_wall = np.sum(
-                top_wall[:, :, [0, 3, 1]] + (2 * top_wall[:, :, [7, 4, 8]]),
-                axis=2,
-                keepdims=True)
+        drag = 6 * lat.W * rho_wall * np.einsum('id,d->i', lat.C, u_lid)
 
-            drag = 6 * lat.W * rho_wall * np.einsum('id,d->i', lat.C, u_lid)
+        top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
 
-            top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
+t_start
+t_end = time.time()
+t_comp = (time.time() - t_start) - t_copy
 
-    t_start
-    t_end = time.time()
-    t_comp = (time.time() - t_start) - t_copy
-    
-    comm.Gather(np.array([t_start, t_end, t_comp, t_copy]), time_results[method], root=0)
+comm.Gather(np.array([t_start, t_end, t_comp, t_copy]), time_results[method], root=0)
 
 #%% SAVE TO FILE
 if rank == 0:
