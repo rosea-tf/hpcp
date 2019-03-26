@@ -79,6 +79,7 @@ lat.walls = walls[lat.cell_starts[rank, 0]:lat.cell_starts[rank, 0] +
                      lat.cell_dims[rank, 0], lat.cell_starts[rank, 1]:lat.
                      cell_starts[rank, 1] + lat.cell_dims[rank, 1]]
 
+
 # find the gap in the left-hand side
 inflow_y = np.logical_not(lat.walls[0, :])
 
@@ -102,8 +103,9 @@ for t in range(max_timesteps + 1):
     u = lat.u()
 
     # prescribe inflow
-    u[0, inflow_y, 0] = inflow
-    u[0, inflow_y, 1] = 0
+    if lat.cart.coords[0] == 0:
+        u[0, inflow_y, 0] = inflow
+        u[0, inflow_y, 1] = 0
 
     lat.collide(omega=omega, u=u)
 
