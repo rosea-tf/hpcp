@@ -8,6 +8,7 @@ msub -l nodes=1:ppn=12 sinedensity.sh -o output/sinedensity.txt
 msub -l nodes=1:ppn=16 shearwave.sh -o output/shearwave.txt
 msub -l nodes=1:ppn=16 poiseuille.sh -o output/poiseuille.txt
 msub -l nodes=1:ppn=16 -l walltime=1200 couette.sh -o output/couette.txt
+msub -l nodes=1:ppn=16 oscillator.sh -o output/oscillator.txt
 
 msub -l nodes=1:ppn=1 -l walltime=1200 timer.sh -o output/timer1.txt
 msub -l nodes=1:ppn=2 -l walltime=900 timer.sh -o output/timer2.txt

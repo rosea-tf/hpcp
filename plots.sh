@@ -7,3 +7,4 @@ python shearwave_plots.py
 python poiseuille_plots.py
 python couette_plots.py
 python timer_plots.py
+python oscillator_plots.py
