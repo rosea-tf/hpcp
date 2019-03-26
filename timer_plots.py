@@ -11,7 +11,7 @@ import _pickle as pickle
 
 # %% LOAD RESULTS
 
-counts = [1, 2, 4, 8, 16, 32, 56]#, 112]
+counts = [1, 2, 4, 8, 16, 32, 56, 112, 224]
 methods = ['2D Grid', '1D Grid', '4x Size, 0.25x Time']
 
 def text_to_time(line):
@@ -102,6 +102,4 @@ fig_secs.savefig('./plots/time_secs.png', dpi=150, bbox_inches='tight')
 
 fig_mlupl.savefig('./plots/time_mlupl.png', dpi=150, bbox_inches='tight')
 
-
-
-#%%
+print("Plotting complete. Results saved in ./plots/")

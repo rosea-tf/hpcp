@@ -21,7 +21,6 @@ lat_x = 400
 lat_y = 300
 omega = 1.0
 
-# recording points
 t_recordpoints = [
     100, 150, 200, 400, 700, 1000, 2000, 3000, 4000, 6000, 8000, 10000
 ]
