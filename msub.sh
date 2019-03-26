@@ -12,7 +12,7 @@ msub -l nodes=1:ppn=16 -l walltime=1200 couette.sh -o output/couette.txt
 msub -l nodes=1:ppn=1 -l walltime=1200 timer.sh -o output/timer1.txt
 msub -l nodes=1:ppn=2 -l walltime=900 timer.sh -o output/timer2.txt
 msub -l nodes=1:ppn=4 timer.sh -o output/timer4.txt
-msub -l nodes=1:ppn=8 timer.sh -o output/timer.txt
+msub -l nodes=1:ppn=8 timer.sh -o output/timer8.txt
 msub -l nodes=1:ppn=16 timer.sh -o output/timer16.txt
 msub -l nodes=2:ppn=16 timer.sh -o output/timer32.txt
 msub -l nodes=2:ppn=28 timer.sh -o output/timer56.txt

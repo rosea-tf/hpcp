@@ -17,7 +17,7 @@ from utils import fetch_grid_dims
 #%% SET PARAMETERS
 lat_x = 1000
 lat_y = 100
-timesteps = 20000  #TODO
+timesteps = 10000  #TODO
 interval_hf = 50  #between recordings of flow at halfway point
 interval_sp = 200  #between recordings for streamplot
 maxints_sp = 9  # number of streamplot frames to record
@@ -63,7 +63,7 @@ for t in range(timesteps):
     # if it sits at the leftmost edge, prescribe its inflow
     if lat.cart.coords[0] == 0:
         u[0, :, 0] = inflow
-        u[0, :, 1] = 0  # ???
+        # u[0, :, 1] = 0  # ???
 
     lat.collide(omega=omega, u=u)
 

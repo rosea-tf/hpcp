@@ -42,7 +42,7 @@ wall_fn = lambda x, y: np.logical_or.reduce(
     [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1])
 
 # this will be coded with the number of processors in use
-outfile = 'time_{}.pkl.gz'
+outfile = 'time_p{}_m{}.pkl.gz'
 
 # dimensions: method, process, t_0/t_end/computation/communcation/
 time_results = np.empty([3, size, 4])
@@ -97,4 +97,4 @@ comm.Gather(np.array([t_start, t_end, t_comp, t_copy]), time_results[method], ro
 #%% SAVE TO FILE
 if rank == 0:
 
-    pickle_save(outfile.format(size), time_results)
+    pickle_save(outfile.format(size, method), time_results)
