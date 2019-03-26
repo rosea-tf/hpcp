@@ -20,30 +20,27 @@ from utils import fetch_grid_dims
 lat_x = 400
 lat_y = 300
 omega = 1.0
-timesteps = 20000
 
-# recording interval
-interval_hf = 20
-interval_sp = 200
-maxints_sp = 9
+# recording points
+t_recordpoints = [
+    100, 150, 200, 400, 700, 1000, 2000, 3000, 4000, 6000, 8000, 10000
+]
+
+max_timesteps = max(t_recordpoints)
 
 # lid velocity
 ux_lid = 0.01
-uy_lids = [0, 0.001]
-uy_period = 400
+uy_lids = [0, 0.0001]
+uy_period = 100
 
 wall_fn_couette = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
 wall_fn_cavity = lambda x, y: np.logical_or.reduce(
-        [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1]
-        )
+    [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1])
 
 wall_fns = [wall_fn_couette, wall_fn_cavity]
 outfiles = ['couette.pkl.gz', 'cavity.pkl.gz']
 
 #%% SETUP
-
-t_hist_hf = np.arange(timesteps, step=interval_hf)
-t_hist_sp = np.arange(interval_sp * maxints_sp, step=interval_sp)
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -66,9 +63,8 @@ for method in [0, 1]:
     if rank == 0:
         lat.print_info()
 
-    halfway_vel_hists = np.empty([2, timesteps // interval_hf, lat_y])
-
-    flow_hists = np.empty([2, maxints_sp, lat_x, lat_y, 2])
+    # first dimension will cover the two methods (slide, vibrate)
+    flow_hists = np.empty([2, len(t_recordpoints), lat_x, lat_y, 2])
 
     u_lid = np.array([ux_lid, 0])
 
@@ -76,13 +72,11 @@ for method in [0, 1]:
     for i_uy, uy_lid in enumerate(uy_lids):
 
         lat.reset_to_eq()
-        halfway_vel_hist = halfway_vel_hists[i_uy]
         flow_hist = flow_hists[i_uy]
 
-        for t in range(timesteps):
+        for t in range(max_timesteps + 1):
             lat.halo_copy()
-            lat.stream()
-            lat.collide(omega=omega)
+            lat.stream()  #bounceback occurs in here
 
             # if it sits at the topmost edge, add sliding lid effect
             # bounceback has already occurred, so rho_wall will be calculated on 2x(7,4,8) instead of 2x(6,2,5)
@@ -102,19 +96,14 @@ for method in [0, 1]:
 
                 top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
 
-            # record flow at halfway point
-            if t % interval_hf == 0:
-                u_snapshot = lat.gather(lat.u())
-
-                if rank == 0:
-                    halfway_vel_hist[t // interval_hf] = u_snapshot[lat_x // 2, :, 0]
+            lat.collide(omega=omega)
 
             # record entire u lattice
-            if t % interval_sp == 0 and t <= t_hist_sp[-1]:
+            if t in t_recordpoints:
                 u_snapshot = lat.gather(lat.u())
 
                 if rank == 0:
-                    flow_hist[t // interval_sp] = u_snapshot
+                    flow_hist[t_recordpoints.index(t)] = u_snapshot
 
     #%% SAVE TO FILE
     if rank == 0:
@@ -128,8 +117,7 @@ for method in [0, 1]:
                           for y in np.arange(lat_y) if wall_fn(x, y)])
 
         d = dict(((k, eval(k)) for k in [
-            'lat_x', 'lat_y', 'omega', 't_hist_hf', 't_hist_sp',
-            'halfway_vel_hists', 'flow_hists', 'walls'
+            'lat_x', 'lat_y', 'omega', 't_recordpoints', 'flow_hists', 'walls'
         ]))
 
         outpath = os.path.join(pickle_path, outfile)
