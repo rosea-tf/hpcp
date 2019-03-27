@@ -13,6 +13,7 @@ import _pickle as pickle
 
 counts = [1, 2, 4, 8, 16, 32, 56, 112, 224]
 methods = ['2D Grid', '1D Grid', '4x Size, 0.25x Time']
+MLUP = 400 * 300 * 2000
 
 def text_to_time(line):
     timesplt = line.split('m')
@@ -45,19 +46,8 @@ for ic, c in enumerate(counts):
             total = text_to_time(line[4:-2]) #exclude 's'
             results[c][method]['s']= total
 
-#%%
-results
 
 #%%
-MLUP = 400 * 300 * 2000
-
-# res = {
-    # c: pickle.load(
-        # gzip.open(os.path.join('pickles', 'time_{}.pkl.gz'.format(c)), 'rb'))
-    # for c in counts
-# }
-
-# %%
 
 plt.rcParams.update(plt.rcParamsDefault)
 
@@ -103,3 +93,18 @@ fig_secs.savefig('./plots/time_secs.png', dpi=150, bbox_inches='tight')
 fig_mlupl.savefig('./plots/time_mlupl.png', dpi=150, bbox_inches='tight')
 
 print("Plotting complete. Results saved in ./plots/")
+
+#%% FIT AMDAHL'S LAW
+
+p = np.array(counts)
+y = t_wall / t_wall[0]
+def f(p, fp):
+    return (1 - fp) + (fp / p)
+
+from scipy.optimize import curve_fit
+
+popt, pcov = curve_fit(f, p, y)
+
+print ("Estimated p_f (fraction of parallelisable code): {} (Variance: {})".format(popt[0], pcov[0,0]))
+
+#%%
