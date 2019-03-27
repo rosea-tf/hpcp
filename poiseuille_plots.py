@@ -46,12 +46,15 @@ ax[1].set_title('Final $u_x$ velocity')
 ax[1].set_xlabel('$y$')
 ax[1].plot(y, halfway_vel_hist[-1, :, 0], label='Observed', alpha=0.5, linewidth=5)
 
-para_calc = (6 * inflow / ((lat_y - 1)**2)) * y * ((lat_y - 1) - y)
+throughflow_halfway_avg = halfway_vel_hist[-1, :, 0].mean()
+
+para_calc = (6 * throughflow_halfway_avg / ((lat_y - 1)**2)) * y * ((lat_y - 1) - y)
 
 ax[1].plot(para_calc, label='Calculated')
 ax[1].legend()
 
 plt.savefig('./plots/poiseuille_half2d.png', dpi=150, bbox_inches='tight')
+# plt.show()
 
 #%% 3D REPRESENTATION
 fig = plt.figure()
