@@ -18,3 +18,4 @@ msub -l nodes=1:ppn=16 timer.sh -o output/timer16.txt
 msub -l nodes=2:ppn=16 timer.sh -o output/timer32.txt
 msub -l nodes=2:ppn=28 timer.sh -o output/timer56.txt
 msub -l nodes=4:ppn=28 timer.sh -o output/timer112.txt
+msub -l nodes=8:ppn=28 timer.sh -o output/timer224.txt
