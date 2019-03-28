@@ -13,7 +13,7 @@ import os
 import _pickle as pickle
 import gzip
 import time
-from utils import fetch_dim_args
+from utils import fetch_dim_args, pickle_save
 
 #%% SET PARAMETERS
 
@@ -105,10 +105,6 @@ for method in [0, 1]:
     #%% SAVE TO FILE
     if rank == 0:
 
-        pickle_path = os.path.join('.', 'pickles')
-        if not os.path.exists(pickle_path):
-            os.mkdir(pickle_path)
-
         # reconstruct walls
         walls = np.array([[x, y] for x in np.arange(lat_x)
                           for y in np.arange(lat_y) if wall_fn(x, y)])
@@ -117,8 +113,4 @@ for method in [0, 1]:
             'lat_x', 'lat_y', 'omega', 't_recordpoints', 'flow_hists', 'walls'
         ]))
 
-        outpath = os.path.join(pickle_path, outfile)
-
-        pickle.dump(d, gzip.open(outpath, 'wb'))
-
-        print("Results saved to " + outpath)
+        pickle_save(outfile, d)

@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import os
 import _pickle as pickle
 import gzip
-from utils import fetch_dim_args
+from utils import fetch_dim_args, pickle_save
 
 #%% SET PARAMETERS
 [lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[400, 300])
@@ -85,17 +85,10 @@ for omega in omegas:
 
 #%% SAVE AND EXIT
 if rank == 0:
-    pickle_path = os.path.join('.', 'pickles')
-    if not os.path.exists(pickle_path):
-        os.mkdir(pickle_path)
 
     d = dict(((k, eval(k)) for k in [
         'lat_x', 'lat_y', 'epsilon', 'omegas', 't_hist', 'density_hists',
         'velocity_hists'
     ]))
 
-    outpath = os.path.join(pickle_path, outfile)
-
-    pickle.dump(d, gzip.open(outpath, 'wb'))
-
-    print("Results saved to " + outpath)
+    pickle_save(outfile, d)

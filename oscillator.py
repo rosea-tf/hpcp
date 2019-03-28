@@ -15,7 +15,7 @@ import _pickle as pickle
 import gzip
 import PIL
 from PIL import Image
-from utils import fetch_dim_args
+from utils import fetch_dim_args, pickle_save
 
 #%% DEFAULT PARAMETERS
 
@@ -92,17 +92,11 @@ for t in range(max_timesteps + 1):
 
 #%% SAVE TO FILE
 if rank == 0:
-    pickle_path = os.path.join('.', 'pickles')
-    if not os.path.exists(pickle_path):
-        os.mkdir(pickle_path)
 
     d = dict(
         ((k, eval(k))
          for k in ['lat_x', 'lat_y', 'omega', 'inflow', 't_recordpoints', 'flow_hist', 'walls']))
 
-    outpath = os.path.join(pickle_path, outfile)
+    pickle_save(outfile, d)
 
-    pickle.dump(d, gzip.open(outpath, 'wb'))
-
-    print("Results saved to " + outpath)
 

@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import os
 import _pickle as pickle
 import gzip
-from utils import fetch_dim_args
+from utils import fetch_dim_args, pickle_save
 
 #%% SET PARAMETERS
 [lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[1000, 100])
@@ -84,20 +84,9 @@ if rank == 0:
     walls = np.array([[x, y] for x in np.arange(lat_x)
                       for y in np.arange(lat_y) if wall_fn(x, y)])
 
-    # save variables and exit
-    pickle_path = os.path.join('.', 'pickles')
-    if not os.path.exists(pickle_path):
-        os.mkdir(pickle_path)
-
     d = dict(((k, eval(k)) for k in [
         'lat_x', 'lat_y', 'inflow', 'omega', 't_hist_hf', 't_hist_sp',
         'halfway_vel_hist', 'flow_hist', 'walls'
     ]))
 
-    outpath = os.path.join(pickle_path, outfile)
-
-    pickle.dump(d, gzip.open(outpath, 'wb'))
-
-    print("Results saved to " + outpath)
-
-#%%
+    pickle_save(outfile, d)
