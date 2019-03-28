@@ -11,11 +11,10 @@ import _pickle as pickle
 from lattice import Lattice
 import os
 import gzip
-from utils import fetch_grid_dims
+from utils import fetch_dim_args
 
 #%% SET PARAMETERS
-lat_x = 400
-lat_y = 300
+[lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[400, 300])
 epsilon = 0.01
 timesteps = 10000
 rec_interval = 100
@@ -27,8 +26,6 @@ t_hist = np.arange(timesteps, step=rec_interval)
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
-
-grid_dims = fetch_grid_dims()
 
 # set up the lattice
 lat = Lattice([lat_x, lat_y], grid_dims=grid_dims)

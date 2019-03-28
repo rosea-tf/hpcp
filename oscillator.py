@@ -10,51 +10,24 @@ from mpi4py import MPI
 from lattice import Lattice
 import matplotlib.pyplot as plt
 from matplotlib import cm
-import argparse
 import os
 import _pickle as pickle
 import gzip
 import PIL
 from PIL import Image
+from utils import fetch_dim_args
 
 #%% DEFAULT PARAMETERS
 
+[lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[400, 300])
+
 interval = 1
-lat_x = 400
-lat_y = 300
-grid_x = None
-grid_y = None
 omega = 1.0
 inflow = 0.01
 outfile = 'oscillator.pkl.gz'
 t_recordpoints = [
     100, 200, 300, 400, 600, 800, 1000, 2000, 3000
 ]
-
-#%% PARSE COMMAND LINE ARGUMENTS
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--lat_x", type=int, help="x-length of lattice to simulate")
-parser.add_argument("--lat_y", type=int, help="y-length of lattice to simulate")
-parser.add_argument("--grid_x", type=int, help="x-length of process grid")
-parser.add_argument("--grid_y", type=int, help="y-length of process grid")
-parser.add_argument("--omega", type=float, default=1.0)
-args = parser.parse_args()
-
-if args.lat_x is not None:
-    lat_x = args.lat_x
-
-if args.lat_y is not None:
-    lat_y = args.lat_y
-
-if args.grid_x is not None:
-    grid_x = args.grid_x
-
-if args.grid_y is not None:
-    grid_y = args.grid_y
-
-if args.omega is not None:
-    omega = args.omega
 
 #%% SETUP
 
@@ -63,8 +36,6 @@ im = Image.open("oscillator.bmp")
 
 # resize it to desired lattice dimensions
 walls = np.asarray(im.resize([lat_x, lat_y])).T
-
-grid_dims = [grid_x, grid_y] if grid_x is not None and grid_y is not None else None
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

@@ -12,26 +12,23 @@ import matplotlib.pyplot as plt
 import os
 import _pickle as pickle
 import gzip
-from utils import fetch_grid_dims
+from utils import fetch_dim_args
 
 #%% SET PARAMETERS
-lat_x = 1000
-lat_y = 100
-timesteps = 10000  #TODO
+[lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[1000, 100])
+timesteps = 10000
 interval_hf = 50  #between recordings of flow at halfway point
 interval_sp = 200  #between recordings for streamplot
 maxints_sp = 9  # number of streamplot frames to record
-
 omega = 1.0
 
 # prescribed inflow at the LHS
 inflow = 0.01
+
 # walls (a row of dry cells) at top and bottom
 wall_fn = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
 
 outfile = 'poiseuille.pkl.gz'
-
-grid_dims = fetch_grid_dims()
 
 #%% SETUP
 t_hist_hf = np.arange(timesteps, step=interval_hf)

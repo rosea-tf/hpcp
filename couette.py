@@ -13,12 +13,12 @@ import os
 import _pickle as pickle
 import gzip
 import time
-from utils import fetch_grid_dims
+from utils import fetch_dim_args
 
 #%% SET PARAMETERS
 
-lat_x = 400
-lat_y = 300
+[lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[400, 300])
+
 omega = 1.0
 
 t_recordpoints = [
@@ -44,8 +44,6 @@ outfiles = ['couette.pkl.gz', 'cavity.pkl.gz']
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
-
-grid_dims = fetch_grid_dims()
 
 # run once without side walls, and once with them
 for method in [0, 1]:
@@ -124,5 +122,3 @@ for method in [0, 1]:
         pickle.dump(d, gzip.open(outpath, 'wb'))
 
         print("Results saved to " + outpath)
-
-#%%

@@ -12,11 +12,10 @@ import matplotlib.pyplot as plt
 import os
 import _pickle as pickle
 import gzip
-from utils import fetch_grid_dims
+from utils import fetch_dim_args
 
 #%% SET PARAMETERS
-lat_x = 400
-lat_y = 300
+[lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[400, 300])
 epsilon = 0.01
 timesteps = 5000
 rec_interval = 5
@@ -25,8 +24,6 @@ outfile = 'sinedensity.pkl.gz'
 
 #%% SETUP
 t_hist = np.arange(timesteps, step=rec_interval)
-
-grid_dims = fetch_grid_dims()
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
