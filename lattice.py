@@ -10,7 +10,7 @@ class Lattice:
 
     Initialises a lattice with equilibrium conditions
 
-    INITIALISATION INPUTS
+    INPUTS
 
         lattice_dims: [int x, int y]
             The total size of the lattice being simulated
@@ -21,8 +21,8 @@ class Lattice:
             will be calculated automatically
 
         wall_fn: (x, y) -> bool IsWallCell
-
-        drag_fn: (x, y) -> [ux, uy]
+            A vectorised function that takes x,y coordinate array as inputs, and returns boolean 
+            array indicating whether a wall (dry cell) exists at this location
 
     """
     # a convenient dictionary allowing us to refer to channels by direction, rather than number
@@ -48,14 +48,9 @@ class Lattice:
     NC = len(C)
 
     # distribution probabilities for each channel, in equilibrium
-    #TODO rename
     W = np.array([4 / 9] + [1 / 9] * 4 + [1 / 36] * 4)
 
-    def __init__(self,
-                 lattice_dims,
-                 grid_dims=None,
-                 wall_fn=None,
-                 drag_fn=None):
+    def __init__(self, lattice_dims, grid_dims=None, wall_fn=None):
 
         self.comm = MPI.COMM_WORLD
         self.rank = self.comm.Get_rank()
@@ -73,41 +68,48 @@ class Lattice:
 
         self.grid_dims = grid_dims
 
-        # we want periodicity in all dimensions
+        # we want default periodicity in all dimensions. Had walls will be used to avoid this where needed.
         self.cart = self.comm.Create_cart(grid_dims, periods=[True, True])
 
         # work out the sequence of x-lengths and y-lengths for cells to cover the grid
-        self.cell_start_scheme, self.cell_dim_scheme = self.opt_cell_ranges(self.lattice_dims, self.grid_dims)
+        self.cell_start_scheme, self.cell_dim_scheme = self.opt_cell_ranges(
+            self.lattice_dims, self.grid_dims)
 
+        # get (i,j) grid coordinates for each node
         coords_list = [self.cart.Get_coords(c) for c in range(self.grid_size)]
-        
-        self.cell_starts = np.array([(self.cell_start_scheme[0][x], self.cell_start_scheme[1][y]) for x, y in coords_list])
-        
-        self.cell_dims = np.array([(self.cell_dim_scheme[0][x], self.cell_dim_scheme[1][y]) for x, y in coords_list])
-        
-        # calculate length in each dimension (will be identical for all cells except the last on each axis)
+
+        # get (x,y) lattice coordinates at which each node's decomposed segment begins
+        self.cell_starts = np.array([(self.cell_start_scheme[0][x],
+                                      self.cell_start_scheme[1][y])
+                                     for x, y in coords_list])
+
+        # get (x,y) lattice extents which each node's decomposed segment covers
+        self.cell_dims = np.array([(self.cell_dim_scheme[0][x],
+                                    self.cell_dim_scheme[1][y])
+                                   for x, y in coords_list])
+
+        # calculate max decomposed lattice extent in each dimension
         self.cell_dims_max = np.max(self.cell_dims, axis=0)
 
-        # fetch values for this particular cell
+        # fetch values for this particular node
         cell_start = self.cell_starts[self.rank]
         cell_dim = self.cell_dims[self.rank]
 
+        # this will trigger if we have more nodes along a grid axis, than we do lattice points
         assert not np.any(
             self.cell_dim_scheme == 0
         ), "Some nodes have nothing to do. Try a larger grid (or fewer nodes)."
 
-        # if self.rank == 0:
-            # rank zero will use this map for gathering later
-                # self.cell_sizes = 
-
-        # set up array representing the lattice
-        # we add two to each dimension to allow for the halo
+        # set up array representing the lattice itself
+        # we add two to each dimension to allow for the ghost cells
         self.data = np.broadcast_to(self.W[np.newaxis, np.newaxis, :],
                                     np.append(np.add(cell_dim, 2),
                                               self.NC)).copy()
 
-        # the data from this lattice, excluding the halo cells
+        # the data from the lattice, excluding the halo cells
         self.core = self.data[1:-1, 1:-1, :]
+
+        # we want this to be a view of the lattice!
         assert not self.core.flags.owndata
         assert self.core.flags.writeable
 
@@ -115,7 +117,7 @@ class Lattice:
         # (rows are already contiguous)
         self.halo_ydec_recvr = np.empty([cell_dim[0] + 2, 1,
                                          self.NC])  #1, not 0, right?
-        self.halo_yinc_recvr = np.empty([cell_dim[0] + 2, 1, self.NC])  #TODO
+        self.halo_yinc_recvr = np.empty([cell_dim[0] + 2, 1, self.NC])
 
         self.cell_ranges = [
             np.arange(cell_start[d], cell_start[d] + cell_dim[d])
@@ -129,12 +131,6 @@ class Lattice:
             self.walls = wall_fn(
                 *np.meshgrid(*self.cell_ranges, indexing='ij'))
 
-        # velocity of walls (for the sliding lid thing)
-        if drag_fn is None:
-            self.drag = None
-        else:
-            self.drag = drag_fn(*np.meshgrid(*self.cell_ranges, indexing='ij'))
-
         # these are 2-tuples which each store the rank of the previous (next) lattice on the [x, y] axis
         self.rank_prev, self.rank_next = zip(
             self.cart.Shift(direction=0, disp=1),
@@ -143,7 +139,20 @@ class Lattice:
     @staticmethod
     def opt_grid_dims(procs, x_len, y_len):
         """
-        automatically finds the best grid arrangement, given an available number of processors and a lattice size
+        automatically finds the best grid arrangement, given an 
+        available number of processors and a lattice size
+
+        INPUTS
+            procs: int
+                The total number of processors available
+
+            x_len, y_len: int
+                The total size of the lattice being simulated
+
+        OUTPUTS
+            best_division: [int m, int n]
+                optimal m*n arrangement of process grid
+
         """
 
         min_ghosts = np.inf
@@ -160,6 +169,7 @@ class Lattice:
                     # actual number will be this * 2
                     ghosts = (m * y_len) + (n * x_len)
 
+                    # if we've found a new best arrangement, update
                     if ghosts < min_ghosts:
                         min_ghosts = ghosts
                         best_division = [m, n]
@@ -169,6 +179,10 @@ class Lattice:
     @staticmethod
     def opt_cell_ranges(lat_dims, grid_dims):
         """
+        Finds the optimum decomposition of the whole lattice onto each node, 
+        given a cartesian node arrangement.
+        This may, of course, result in an uneven decomposition.
+
         INPUTS
             lat_dim: [int x, int y], np.array shape (2,)
                 the size of the entire lattice
@@ -180,26 +194,35 @@ class Lattice:
             cell_starts: np.array (m,n,2,)
                 for each cell at location i in m, j in n
                 the (x,y) lattice coordinates of its start position
+
+            cell_starts: np.array (m,n,2,)
+                for each cell at location i in m, j in n
+                the (x,y) lattice extents that it covers
+        
         """
 
         cell_dims = [None, None]
         cell_starts = [None, None]
 
         for d in [0, 1]:
-        
+
             int_quotient = lat_dims[d] // grid_dims[d]
-            
+
             num_ints = grid_dims[d] * (int_quotient + 1) - lat_dims[d]
 
             num_intplusones = grid_dims[d] - num_ints
 
-            cell_dims[d] = [int_quotient + 1] * num_intplusones + [int_quotient] * num_ints
-            cell_starts[d] = [sum(cell_dims[d][:i]) for i in range(len(cell_dims[d]))]
+            cell_dims[d] = [int_quotient + 1
+                            ] * num_intplusones + [int_quotient] * num_ints
+            cell_starts[d] = [
+                sum(cell_dims[d][:i]) for i in range(len(cell_dims[d]))
+            ]
 
         return cell_starts, cell_dims
 
-
     def print_info(self):
+        """Prints some useful info about the grid configuration"""
+
         print("Simulating {} lattice using a {} process grid".format(
             self.lattice_dims, self.cart.dims))
         print("Cell lengths (x): {}".format(self.cell_dim_scheme[0]))
@@ -211,7 +234,10 @@ class Lattice:
                                 np.newaxis, :]  # broadcast, please.
 
     def halo_copy(self):
-        """copies data into the halo cells of all lattices"""
+        """
+        copies the outermost non-ghost cells of each lattice component 
+        into the ghost cells of the neighbouring nodes
+        """
 
         # Send to next x, recv from prev x
         self.comm.Sendrecv(
@@ -249,6 +275,7 @@ class Lattice:
         """
         stream each of the channels in a cell. 
         This uses periodic boundary conditions everywhere.
+        Bounceback from dry cells is automatically performed.
         """
 
         n = np.sum(self.data)  #TODO - move out
@@ -270,15 +297,24 @@ class Lattice:
         assert np.isclose(n, np.sum(self.data))
 
     def rho(self):
-        """m x n: density at each point"""
+        """
+        Produces an m x n x 1 computation of the total mass density at each point 
+        (i.e. the sum of particle occupation numbers across each of the nine channels)
+        """
         return np.sum(self.core, axis=2, keepdims=True)
 
     def j(self):
-        """m x n x 2: momentum density at each point"""
+        """
+        produces an m x n x 2 computation of the momentum density 
+        (a two-dimensional vector) at each point
+        """
         return np.einsum('mni,id->mnd', self.core, self.C)
 
     def u(self, rho=None):
-        """m x n x 2: average velocity at each point"""
+        """
+        produces an m x n x 2 computation of the average velocity 
+        (a two-dimensional vector) at each point
+        """
         if rho is None:
             rho = self.rho()
         j = self.j()
@@ -287,10 +323,13 @@ class Lattice:
         return np.divide(j, rho, out=np.zeros_like(j), where=(rho != 0))
 
     def f_eq(self, rho=None, u=None):
-        """m x n x i: equilibrium flow at each position (given current avg velocity)
-        
-        optional: prescribed velocity u
         """
+        calculates the [m x n x 9] local equilibrium distribution of channel occupations 
+        at each point in the lattice. 
+        Optionally, it accepts prescribed rho and u parameters;
+        if these are not given, it computes them from the lattice itself.
+        """
+
         if rho is None: rho = self.rho()
         if u is None: u = self.u(rho=rho)
 
@@ -300,19 +339,30 @@ class Lattice:
 
         u2 = np.sum(np.power(u, 2), axis=2, keepdims=True)
 
-        inside_term = 1 + (3 * cu) + (9 / 2) * cu2 - (3 / 2) * u2
-
         # for the rest channel, these terms should drop out
-        assert cu[0].all() == 0
-        assert cu2[0].all() == 0
+        # assert np.all(cu[:, :, 0] == 0)
+        # assert np.all(cu2[:, :, 0] == 0)
+
+        inside_term = 1 + (3 * cu) + (9 / 2) * cu2 - (3 / 2) * u2
 
         return self.W * np.multiply(rho, inside_term)
 
-    def collide(self, omega=1, rho=None, u=None):
+    def collide(self, omega=1.0, rho=None, u=None):
+        """
+        performs a redistribution of channel occupation numbers at each point in the lattice. 
+        It accepts the parameter omega, representing particle collision frequency.
+        Optionally, it accepts prescribed rho and u parameters;
+        if these are not given, it computes them from the lattice itself.
+        """
+
         # prescribed_u (optional) overrides the u calculated from the provided lattice
         self.core += omega * (self.f_eq(rho, u) - self.core)
 
     def gather(self, data):
+        """
+        Gathers user-specifiable data from each lattice node 
+        onto a reconstructed whole-lattice data array on rank zero.
+        """
         depth = data.shape[2]
 
         # gather all nodes in 1D form array
