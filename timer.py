@@ -1,5 +1,6 @@
 """
-Tmiing of benefits from parallelisation
+Experiment with the effect that processing node count has on the
+time taken to compute the Lid-Driven Cavity experiment of Chapter 7. 
 
 @author: AlexR
 """
@@ -9,7 +10,6 @@ import numpy as np
 from mpi4py import MPI
 from lattice import Lattice
 import matplotlib.pyplot as plt
-import time
 from utils import pickle_save
 import argparse
 
@@ -18,7 +18,11 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 parser = argparse.ArgumentParser()
-parser.add_argument("method", type=int, choices=[0,1,2], help="0: normal; 1: 1-dimensional grid; 2: larger grid, shorter time")
+parser.add_argument(
+    "method",
+    type=int,
+    choices=[0, 1, 2],
+    help="0: normal; 1: 1-dimensional grid; 2: larger grid, shorter time")
 args = parser.parse_args()
 
 method = args.method
@@ -34,7 +38,7 @@ grid_dims_s = [None, [size, 1], None]
 
 omega = 1.0
 
-# lid velocity
+# lid velocity - constant, no vibrations
 u_lid = np.array([0.01, 0])
 
 # we're in a box, now.
@@ -44,17 +48,11 @@ wall_fn = lambda x, y: np.logical_or.reduce(
 # this will be coded with the number of processors in use
 outfile = 'time_p{}_m{}.pkl.gz'
 
-# dimensions: method, process, t_0/t_end/computation/communcation/
-time_results = np.empty([3, size, 4])
-
 #%% SETUP
 lat_x = lat_x_s[method]
 lat_y = lat_y_s[method]
 timesteps = timesteps_s[method]
 grid_dims = grid_dims_s[method]
-
-t_start = time.time()
-t_copy = 0.0
 
 # set up the lattice
 lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
@@ -68,10 +66,7 @@ if rank == 0:
 
 #%% SIMULATION
 for t in range(timesteps):
-    t_precopy = time.time()
     lat.halo_copy()
-    t_copy += (time.time() - t_precopy)
-
     lat.stream()
     lat.collide(omega=omega)
 
@@ -88,13 +83,5 @@ for t in range(timesteps):
 
         top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
 
-t_start
-t_end = time.time()
-t_comp = (time.time() - t_start) - t_copy
-
-comm.Gather(np.array([t_start, t_end, t_comp, t_copy]), time_results[method], root=0)
-
-#%% SAVE TO FILE
-if rank == 0:
-
-    pickle_save(outfile.format(size, method), time_results)
+comm.Gather(
+    np.array([t_start, t_end, t_comp, t_copy]), time_results[method], root=0)

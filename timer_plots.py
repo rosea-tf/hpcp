@@ -1,14 +1,10 @@
 #%% IMPORTS
 
 import os
-import gzip
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import cm
-from mpl_toolkits.mplot3d import Axes3D
 
-import _pickle as pickle
 from utils import plot_save
 
 # %% LOAD RESULTS
