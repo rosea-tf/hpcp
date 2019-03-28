@@ -11,7 +11,7 @@ from utils import plot_save
 
 counts = [1, 2, 4, 8, 16, 32, 56, 112, 224]
 methods = ['2D Grid', '1D Grid', '4x Size, 0.25x Time']
-MLUP = 400 * 300 * 2000
+MLUP = 400 * 300 * 2000 / 1e6
 
 
 def text_to_time(line):
@@ -60,10 +60,10 @@ ax_secs[0].set_ylabel('Seconds')
 ax_secs[1].set_title('CPU Time')
 
 fig_mlupl, ax_mlupl = plt.subplots(1, 2, sharey=True, figsize=(10, 4))
-ax_mlupl[0].set_title('MLUPS (Wall Clock)')
-ax_mlupl[0].set_ylabel('Seconds')
+ax_mlupl[0].set_title('Lattice Update Frequency (Wall Clock)')
+ax_mlupl[0].set_ylabel('MLUPS')
 
-ax_mlupl[1].set_title('MLUPS (CPU Time)')
+ax_mlupl[1].set_title('Lattice Update Frequency (CPU Time)')
 
 for im, method in enumerate(methods):
 
