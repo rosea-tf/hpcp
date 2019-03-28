@@ -1,5 +1,7 @@
-import os
+#%% IMPORTS
+
 import gzip
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,6 +9,9 @@ from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 
 import _pickle as pickle
+from utils import plot_save
+
+#%% SETUP AND PLOTTING
 
 plt.rcParams.update(plt.rcParamsDefault)
 
@@ -28,13 +33,8 @@ for method in methods:
     x = np.arange(lat_x)
     y = np.arange(lat_y)
 
-    # t_hist_sp = res['t_hist_sp']
-    # t_hist_hf = res['t_hist_hf']
-    # halfway_vel_hists = res['halfway_vel_hists']
     t_recordpoints = res['t_recordpoints']
     flow_hists = res['flow_hists']
-
-    # yy, tt = np.meshgrid(y, t_hist_hf)
 
     fig2d = plt.figure(figsize=[10, 4])
 
@@ -46,8 +46,8 @@ for method in methods:
         # add a panel to 2d chart
         ax2d = fig2d.add_subplot(1, 2, 1 + i_uy)
         ax2d.set_title(uy_description[i_uy])
-        ax2d.plot(halfway_vel_final[:-1, 0],
-                  y[:-1])  #cut out the last cell, which is the dry cell
+        #cut out the last cell, which is the dry cell
+        ax2d.plot(halfway_vel_final[:-1, 0], y[:-1])
         # and plot the x-velocity only
         ax2d.set_ylabel('$y$')
         ax2d.set_xlabel('$u_x$')
@@ -76,10 +76,7 @@ for method in methods:
                 *np.transpose(flow_hist[i], [2, 1, 0]),
                 linewidth=(300) * np.linalg.norm(flow_hist[i], axis=2).T)
 
-        fig.savefig(
-            './plots/{}_stream_{}.png'.format(method, i_uy),
-            dpi=150,
-            bbox_inches='tight')
+        plot_save(fig, '{}_stream_{}.png'.format(method, i_uy))
 
         # zoomed-in stream plot
         fig, axc = plt.subplots(
@@ -109,12 +106,6 @@ for method in methods:
                 *np.transpose(flow_zoom, [2, 1, 0]),
                 linewidth=(100) * np.linalg.norm(flow_zoom, axis=2).T)
 
-        fig.savefig(
-            './plots/{}_streamzoom_{}.png'.format(method, i_uy),
-            dpi=150,
-            bbox_inches='tight')
+        plot_save(fig, '{}_streamzoom_{}.png'.format(method, i_uy))
 
-    fig2d.savefig(
-        './plots/{}_halfway.png'.format(method), dpi=150, bbox_inches='tight')
-
-print("Plotting complete. Results saved in ./plots/")
+    plot_save(fig, '{}_halfway.png'.format(method))

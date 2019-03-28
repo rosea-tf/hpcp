@@ -4,15 +4,18 @@ Plotting shear wave decay
 @author: AlexR
 """
 
-#%%
+#%% IMPORTS
 
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-from matplotlib import cm
-import _pickle as pickle
-import numpy as np
-import os
 import gzip
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+
+import _pickle as pickle
+from utils import plot_save
 
 #%% LOAD DATA
 
@@ -29,10 +32,9 @@ k = res['k']
 #find reference position for sin wave peak
 sin_peak_pos_y = np.argmax(u_init[0, :, 0])  #r0
 
-#%% INITIAL CONDITIONS
-
 plt.rcParams.update(plt.rcParamsDefault)
 
+#%% INITIAL CONDITIONS
 plt.clf()
 fig, ax = plt.subplots(1, 2, sharey=True, figsize=(9, 4))
 
@@ -51,7 +53,7 @@ ax[1].streamplot(
     *np.transpose(u_init, [2, 1, 0]),
     linewidth=(3 / epsilon) * np.linalg.norm(u_init, axis=2).T)
 
-plt.savefig('./plots/shearwave_initial.png', dpi=150, bbox_inches='tight')
+plot_save(fig, 'shearwave_initial.png')
 
 #%% ANALYTICAL PREDICTIONS
 plt.clf()
@@ -108,7 +110,7 @@ viscosity_calc_r = (1 / 3) * ((1 / omega_r) - (1 / 2))
 ax[1].plot(omega_r, viscosity_calc_r, label='Predicted')
 ax[1].legend()
 
-plt.savefig('./plots/shearwave_predictions.png', dpi=150, bbox_inches='tight')
+plot_save(fig, 'shearwave_predictions.png')
 
 #%% SHEARWAVE 3D
 plt.clf()
@@ -136,8 +138,4 @@ for i, omega in enumerate([0.25, 1.0]):
     ax.set_ylabel('$t$')
     ax.set_zlabel('Amplitude')
 
-plt.tight_layout()
-plt.savefig('./plots/shearwave_time.png', dpi=150, bbox_inches='tight')
-
-#%%
-print("Plotting complete. Results saved in ./plots/")
+plot_save(fig, 'shearwave_time.png')

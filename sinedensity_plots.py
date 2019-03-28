@@ -1,25 +1,26 @@
-#%% CHARTING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#%% IMPORTS
 
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-import numpy as np
-import _pickle as pickle
-import os
 import gzip
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+
+import _pickle as pickle
+from utils import plot_save
+
+#%% LOAD DATA
 
 res = pickle.load(
     gzip.open(os.path.join('pickles', 'sinedensity.pkl.gz'), 'rb'))
 
-# make data
-MAX_SP = 400
-
 x = np.arange(res['lat_x'])
 t_hist = res['t_hist']
+MAX_SP = 400
 t_hist_sp = t_hist[:MAX_SP]
 xx, tt = np.meshgrid(x, t_hist_sp)
-
 
 # these will hold the summaries for the 2D plots
 density_peak_hist = {}
@@ -27,82 +28,77 @@ velocity_peak_hist = {}
 
 plt.rcParams.update(plt.rcParamsDefault)
 
-for omega in [0.5]:
-    density_hist = res['density_hists'][omega]
-    velocity_hist = res['velocity_hists'][omega]
+# we plot only for this value, though others are available in results set
+omega = 0.5
 
-    # INITIAL PLOT
-    fig = plt.figure(figsize=(10, 4))
-    ax = fig.add_subplot(1, 2, 1)
-    ax.set_title('Initial density $\\rho$ (magnitude)')
-    ax.set_xlabel('$x$')
-    ax.set_ylabel('$u_x$')
-    ax.set_xticks([])
-    ax.plot(x, density_hist[0])
+density_hist = res['density_hists'][omega]
+velocity_hist = res['velocity_hists'][omega]
 
-    ax = fig.add_subplot(1, 2, 2)
-    ax.set_title('Initial density $\\rho$ (lattice)')
-    ax.set_xlabel('$x$')
-    ax.set_ylabel('$y$')
-    ax.set_xticks([])
-    ax.set_yticks([])
-    im = ax.imshow(np.broadcast_to(density_hist[0, :, None], shape=(400,300)).T)
-    fig.colorbar(im)
+#%% PLOT INITIAL CONDITIONS
+fig = plt.figure(figsize=(10, 4))
+ax = fig.add_subplot(1, 2, 1)
+ax.set_title('Initial density $\\rho$ (magnitude)')
+ax.set_xlabel('$x$')
+ax.set_ylabel('$u_x$')
+ax.set_xticks([])
+ax.plot(x, density_hist[0])
 
-    fig.savefig(
-        './plots/sinedensity_initial.png',
-        dpi=150,
-        bbox_inches='tight')
-    
-    #3D FIGURE
-    fig = plt.figure(figsize=(10, 4))
+ax = fig.add_subplot(1, 2, 2)
+ax.set_title('Initial density $\\rho$ (lattice)')
+ax.set_xlabel('$x$')
+ax.set_ylabel('$y$')
+ax.set_xticks([])
+ax.set_yticks([])
+im = ax.imshow(np.broadcast_to(density_hist[0, :, None], shape=(400, 300)).T)
+fig.colorbar(im)
 
-    # DENSITY PLOT
-    ax = fig.add_subplot(1, 2, 1, projection='3d')
+plot_save(fig, 'sinedensity_initial.png')
 
-    ax.set_title('Density $\\rho$ over time')
-    ax.set_xlabel('$x$')
-    ax.set_ylabel('$t$')
-    ax.set_zlabel('$\\rho$')
+#%% 3D FIGURE
+fig = plt.figure(figsize=(10, 4))
 
-    surf = ax.plot_surface(
-        xx,
-        tt,
-        density_hist[:MAX_SP],
-        rstride=1,
-        cstride=1,
-        cmap=cm.get_cmap('viridis'),
-        linewidth=0,
-        antialiased=True)
+# density plot
+ax = fig.add_subplot(1, 2, 1, projection='3d')
 
-    # VELOCITY PLOT
-    ax = fig.add_subplot(1, 2, 2, projection='3d')
+ax.set_title('Density $\\rho$ over time')
+ax.set_xlabel('$x$')
+ax.set_ylabel('$t$')
+ax.set_zlabel('$\\rho$')
 
-    ax.set_title('Velocity $\mathbf{u}_x$ over time')
-    ax.set_xlabel('$x$')
-    ax.set_ylabel('$t$')
-    ax.set_zlabel('$\mathbf{u}_x$')
+surf = ax.plot_surface(
+    xx,
+    tt,
+    density_hist[:MAX_SP],
+    rstride=1,
+    cstride=1,
+    cmap=cm.get_cmap('viridis'),
+    linewidth=0,
+    antialiased=True)
 
-    ax.plot_surface(
-        xx,
-        tt,
-        velocity_hist[:MAX_SP],
-        rstride=1,
-        cstride=1,
-        cmap=cm.get_cmap('coolwarm'),
-        linewidth=0,
-        antialiased=True)
+# velocity plot
+ax = fig.add_subplot(1, 2, 2, projection='3d')
 
-    plt.tight_layout()
-    plt.savefig(
-        './plots/sinedensity_3d.png',
-        dpi=150,
-        bbox_inches='tight')
+ax.set_title('Velocity $\mathbf{u}_x$ over time')
+ax.set_xlabel('$x$')
+ax.set_ylabel('$t$')
+ax.set_zlabel('$\mathbf{u}_x$')
 
-# 2D PLOT
+ax.plot_surface(
+    xx,
+    tt,
+    velocity_hist[:MAX_SP],
+    rstride=1,
+    cstride=1,
+    cmap=cm.get_cmap('coolwarm'),
+    linewidth=0,
+    antialiased=True)
+
+plot_save(fig, 'sinedensity_3d.png')
+
+#%% 2D PLOT
 fig, ax = plt.subplots(1, 2, figsize=(10, 4))
 
-# DENSITY PLOT
+# density plot
 ax[0].set_title('$Var(\\rho)$ over time')
 ax[0].set_xlabel('$t$')
 ax[0].set_ylabel('$\\rho(x_{ref})$')
@@ -110,24 +106,23 @@ ax[0].set_ylabel('$\\rho(x_{ref})$')
 for omega in res['omegas']:
     density_hist = res['density_hists'][omega]
     density_init_argmax = np.argmax(density_hist[0])
-    ax[0].plot(t_hist, density_hist.std(axis=1)**2, label='$\omega={}$'.format(omega))
+    ax[0].plot(
+        t_hist, density_hist.std(axis=1)**2, label='$\omega={}$'.format(omega))
     ax[0].ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
 
+# velocity plot
 ax[1].set_title('$Var(\mathbf{u}_x)$ over time')
 ax[1].set_xlabel('$t$')
 ax[1].set_ylabel('$\mathbf{u}_x(x_{ref})$')
 
 for omega in res['omegas']:
     velocity_hist = res['velocity_hists'][omega]
-    ax[1].plot(t_hist, velocity_hist.std(axis=1)**2, label='$\omega={}$'.format(omega))
+    ax[1].plot(
+        t_hist,
+        velocity_hist.std(axis=1)**2,
+        label='$\omega={}$'.format(omega))
     ax[1].ticklabel_format(style='sci', axis='y', scilimits=(0, 0))
 
 ax[1].legend()
 
-plt.tight_layout()
-plt.savefig('./plots/sinedensity_2d.png', dpi=150, bbox_inches='tight')
-
-print("Plotting complete. Results saved in ./plots/")
-
-
-#%%
+plot_save(fig, 'sinedensity_2d.png')

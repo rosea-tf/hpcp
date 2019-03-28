@@ -1,13 +1,15 @@
 #%% IMPORTS
 
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-from matplotlib import cm
-# from matplotlib.ticker import LinearLocator, FormatStrFormatter
-import numpy as np
-import _pickle as pickle
-import os
 import gzip
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+
+import _pickle as pickle
+from utils import plot_save
 
 # %% SETUP
 
@@ -30,39 +32,43 @@ yy, tt = np.meshgrid(y, t_hist_hf)
 
 plt.rcParams.update(plt.rcParamsDefault)
 
-#%% Evolution of flow over time, and parabola
+#%% EVOLUTION OF FLOW OVER TIME, AND PARABOLA
 plt.clf()
 fig, ax = plt.subplots(1, 2, sharey=True, figsize=[10, 4])
 
 ax[0].set_title('$u_x$ velocity over time')
 ax[0].set_xlabel('$t$')
 ax[0].set_ylabel('$u_x$')
-ax[0].plot(t_hist_hf, halfway_vel_hist[:, lat_y // 2, 0], label='Center of $y$-axis')
-ax[0].plot(t_hist_hf, 
-    np.mean(halfway_vel_hist[:, :, 0], axis=1), label='Average over $y$-axis')
+ax[0].plot(
+    t_hist_hf, halfway_vel_hist[:, lat_y // 2, 0], label='Center of $y$-axis')
+ax[0].plot(
+    t_hist_hf,
+    np.mean(halfway_vel_hist[:, :, 0], axis=1),
+    label='Average over $y$-axis')
 ax[0].legend()
 
 ax[1].set_title('Final $u_x$ velocity')
 ax[1].set_xlabel('$y$')
-ax[1].plot(y, halfway_vel_hist[-1, :, 0], label='Observed', alpha=0.5, linewidth=5)
+ax[1].plot(
+    y, halfway_vel_hist[-1, :, 0], label='Observed', alpha=0.5, linewidth=5)
 
 throughflow_halfway_avg = halfway_vel_hist[-1, :, 0].mean()
 
-para_calc = (6 * throughflow_halfway_avg / ((lat_y - 1)**2)) * y * ((lat_y - 1) - y)
+para_calc = (6 * throughflow_halfway_avg / ((lat_y - 1)**2)) * y * (
+    (lat_y - 1) - y)
 
 ax[1].plot(para_calc, label='Calculated')
 ax[1].legend()
 
-plt.savefig('./plots/poiseuille_half2d.png', dpi=150, bbox_inches='tight')
-# plt.show()
+plot_save(fig, 'poiseuille_half2d.png')
 
 #%% 3D REPRESENTATION
+plt.clf()
 fig = plt.figure()
 
 # set up the axes for the first plot
 ax = fig.add_subplot(1, 1, 1, projection='3d')
 
-# plot a 3D surface like in the example mplot3d/surface3d_demo
 ax.plot_surface(
     yy,
     tt,
@@ -76,8 +82,7 @@ ax.set_xlabel('$y$')
 ax.set_ylabel('$t$')
 ax.set_zlabel('$u_x$')
 
-plt.tight_layout()
-plt.savefig('./plots/poiseuille_half3d.png', dpi=150, bbox_inches='tight')
+plot_save(fig, 'poiseuille_half3d.png')
 
 #%% STREAMPLOT
 plt.clf()
@@ -102,6 +107,4 @@ for i in range(9):
         *np.transpose(flow_hist[i], [2, 1, 0]),
         linewidth=(100) * np.linalg.norm(flow_hist[i], axis=2).T)
 
-plt.savefig('./plots/poiseuille_streamtime.png', dpi=150, bbox_inches='tight')
-
-print("Plotting complete. Results saved in ./plots/")
+plot_save(fig, 'poiseuille_streamtime.png')

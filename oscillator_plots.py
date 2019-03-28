@@ -1,12 +1,15 @@
 #%% IMPORTS
 
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
-from matplotlib import cm
-import numpy as np
-import _pickle as pickle
-import os
 import gzip
+import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
+
+import _pickle as pickle
+from utils import plot_save
 
 # %% SETUP
 
@@ -26,7 +29,7 @@ y = np.arange(lat_y)
 
 plt.rcParams.update(plt.rcParamsDefault)
 
-#%% A thing, not a movie
+#%% STREAMPLOTS
 plt.clf()
 x = np.arange(lat_x)
 y = np.arange(lat_y)
@@ -45,7 +48,6 @@ for i in range(9):
     ax[i].set_xticks([])
     ax[i].set_yticks([])
 
-    # ax[i].scatter(*walls.T, marker='s', s=1, color='red')
     ax[i].imshow(walls.T, cmap=cm.get_cmap('Pastel2'))
     ax[i].streamplot(
         x,
@@ -53,6 +55,4 @@ for i in range(9):
         *np.transpose(flow_hist[i], [2, 1, 0]),
         linewidth=(100) * np.linalg.norm(flow_hist[i], axis=2).T)
 
-fig.savefig('./plots/oscillator.png', dpi=150, bbox_inches='tight')
-
-print("Plotting complete. Results saved in ./plots/")
+plot_save(fig, 'oscillator.png')
