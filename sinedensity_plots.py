@@ -1,3 +1,10 @@
+"""
+Plotting script to be run after sinedensity.py
+
+Serial only.
+
+@author: AlexR
+"""
 #%% IMPORTS
 
 import gzip

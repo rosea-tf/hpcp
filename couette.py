@@ -1,18 +1,35 @@
 """
-Simulation of couette flow
+ Simulate Couette flow (channel periodic in the x-axis, with a moving top wall), for both a smooth and vibrating lid.
+ 
+ Then simulate the lid driven cavity (same thing, but no longer x-periodic)
+
+ARGUMENTS
+    --lat_x, --lat_y : int
+        overrides default x- and y-dimensions of the entire lattice
+
+    --grid_x, --grid_y : int
+        overrides default x- and y-dimensions of the cartesian processor arrangement. If specified, their product must match the number of processors in use.
+
+INPUTS
+    None
+
+OUTPUTS
+    couette.pkl.gz
+        Compressed results file. Used for plotting.
+    
+    cavity.pkl.gz
+        Compressed results file. Used for plotting.
 
 @author: AlexR
 """
-#%% SETUP
+
+#%% IMPORTS
 
 import numpy as np
 from mpi4py import MPI
-from lattice import Lattice
-import matplotlib.pyplot as plt
-import os
+
 import _pickle as pickle
-import gzip
-import time
+from lattice import Lattice
 from utils import fetch_dim_args, pickle_save
 
 #%% SET PARAMETERS
@@ -21,18 +38,26 @@ from utils import fetch_dim_args, pickle_save
 
 omega = 1.0
 
+# time steps at which to show the streamplot
 t_recordpoints = [
     100, 150, 200, 400, 700, 1000, 2000, 3000, 4000, 6000, 8000, 10000
 ]
 
 max_timesteps = max(t_recordpoints)
 
-# lid velocity
+# lid velocity: moving to right
 ux_lid = 0.01
+
+# two options: smooth sliding, and vibration
 uy_lids = [0, 0.0001]
+
+# if vibrating, set the period of the sine wave
 uy_period = 100
 
+# walls at top and bottom
 wall_fn_couette = lambda x, y: np.logical_or(y == 0, y == lat_y - 1)
+
+# walls at top, bottom, and sides
 wall_fn_cavity = lambda x, y: np.logical_or.reduce(
     [y == 0, y == lat_y - 1, x == 0, x == lat_x - 1])
 
@@ -60,9 +85,11 @@ for method in [0, 1]:
     if rank == 0:
         lat.print_info()
 
-    # first dimension will cover the two methods (slide, vibrate)
+    # set up container for data used in the streamplot
+    # first dimension := the two methods (slide, vibrate)
     flow_hists = np.empty([2, len(t_recordpoints), lat_x, lat_y, 2])
 
+    # smooth sliding
     u_lid = np.array([ux_lid, 0])
 
     #%% SIMULATION
@@ -82,6 +109,7 @@ for method in [0, 1]:
                 # sine-wave wobble for the lid (if any)
                 u_lid[1] = uy_lid * np.sin(2 * np.pi * t / uy_period)
 
+                # modified bounceback operation...
                 rho_wall = np.sum(
                     top_wall[:, :, [0, 3, 1]] +
                     (2 * top_wall[:, :, [7, 4, 8]]),
@@ -102,7 +130,7 @@ for method in [0, 1]:
                 if rank == 0:
                     flow_hist[t_recordpoints.index(t)] = u_snapshot
 
-    #%% SAVE TO FILE
+    #%% SAVE RESULTS
     if rank == 0:
 
         # reconstruct walls

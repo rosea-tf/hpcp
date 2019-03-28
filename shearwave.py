@@ -1,25 +1,43 @@
 """
-Simulation of shear wave decay
+ Prescribe an initial velocity at time t= 0 based on a shearwave pattern that varies along the y-axis.
+ Simulate the decay of this shearwave over time.
+
+ARGUMENTS
+    --lat_x, --lat_y : int
+        overrides default x- and y-dimensions of the entire lattice
+
+    --grid_x, --grid_y : int
+        overrides default x- and y-dimensions of the cartesian processor arrangement. If specified, their product must match the number of processors in use.
+
+INPUTS
+    None
+
+OUTPUTS
+    shearwave.pkl.gz
+        Compressed results file. Used for plotting.
 
 @author: AlexR
 """
+
 #%% SETUP
 
 import numpy as np
 from mpi4py import MPI
+
 import _pickle as pickle
 from lattice import Lattice
-import os
-import gzip
 from utils import fetch_dim_args, pickle_save
 
 #%% SET PARAMETERS
+
 [lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[400, 300])
 epsilon = 0.01
 timesteps = 10000
 rec_interval = 100
 omegas = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75]
 outfile = 'shearwave.pkl.gz'
+
+#%% SETUP
 
 t_hist = np.arange(timesteps, step=rec_interval)
 
@@ -45,8 +63,6 @@ u_y_sin = np.zeros_like(u_x_sin)
 
 u_sin = np.stack([u_x_sin, u_y_sin], axis=-1)
 
-del u_x_sin, u_y_sin
-
 # run collision operator once, feeding this prescribed u in
 lat.collide(u=u_sin)
 u_initial = lat.gather(lat.u())
@@ -56,9 +72,6 @@ amplitude_hists = {
     omega: np.empty([timesteps // rec_interval, lat_y])
     for omega in omegas
 }  #r0
-
-# density_hist = {omega: np.empty(
-# [timesteps // rec_interval, lat_y]) for omega in omegas}
 
 #%% SIMULATION
 for omega in omegas:
@@ -88,7 +101,7 @@ for omega in omegas:
         lat.stream()
         lat.collide(omega=omega)
 
-#%% SAVE AND EXIT
+#%% SAVE RESULTS
 
 if rank == 0:
 

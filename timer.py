@@ -1,10 +1,32 @@
 """
 Experiment with the effect that processing node count has on the
 time taken to compute the Lid-Driven Cavity experiment of Chapter 7. 
+Three different methods:
+
+    0. A 400 × 300 lattice simulated for 20,000 timesteps, with nodes arranged
+    in an optimal two-dimensionsal domain decomposition.
+
+    1. A 400 × 300 lattice simulated for 20,000 timesteps, with nodes arranged in
+    a one-dimensional (n × 1) domain decomposition
+
+    2. A 800 × 600 lattice simulated for 5,000 timesteps, with nodes arranged in
+    the same 2D grid as in (1).
+
+ARGUMENTS
+    method: [0, 1, 2]
+        (as above)
+
+INPUTS
+    None
+
+OUTPUTS
+    No outputs as such. Script should be run inside a `time` command that
+    produces its own outputs (see timer.sh)
 
 @author: AlexR
 """
-#%% SETUP
+
+#%% IMPORTS
 
 import numpy as np
 from mpi4py import MPI
@@ -82,6 +104,3 @@ for t in range(timesteps):
         drag = 6 * lat.W * rho_wall * np.einsum('id,d->i', lat.C, u_lid)
 
         top_wall[:, :, [7, 4, 8]] += drag[:, :, [7, 4, 8]]
-
-comm.Gather(
-    np.array([t_start, t_end, t_comp, t_copy]), time_results[method], root=0)

@@ -1,24 +1,37 @@
 """
-Simulation of poseuille flow
+ Simulate Poiseuille flow (channel periodic in the x-axis, with top and bottom walls, and constant inflow at the left)
+
+ARGUMENTS
+    --lat_x, --lat_y : int
+        overrides default x- and y-dimensions of the entire lattice
+
+    --grid_x, --grid_y : int
+        overrides default x- and y-dimensions of the cartesian processor arrangement. If specified, their product must match the number of processors in use.
+
+INPUTS
+    None
+
+OUTPUTS
+    poiseuille.pkl.gz
+        Compressed results file. Used for plotting.
 
 @author: AlexR
 """
+
 #%% IMPORTS
 
 import numpy as np
 from mpi4py import MPI
-from lattice import Lattice
-import matplotlib.pyplot as plt
-import os
+
 import _pickle as pickle
-import gzip
+from lattice import Lattice
 from utils import fetch_dim_args, pickle_save
 
 #%% SET PARAMETERS
 [lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[1000, 100])
 timesteps = 10000
-interval_hf = 50  #between recordings of flow at halfway point
-interval_sp = 200  #between recordings for streamplot
+interval_hf = 50  # between recordings of flow at halfway point
+interval_sp = 200  # between recordings for streamplot
 maxints_sp = 9  # number of streamplot frames to record
 omega = 1.0
 
@@ -44,8 +57,10 @@ lat = Lattice([lat_x, lat_y], grid_dims=grid_dims, wall_fn=wall_fn)
 if rank == 0:
     lat.print_info()
 
+# set up container for data used in the analysis of flow at the halfway point
 halfway_vel_hist = np.empty([timesteps // interval_hf, lat_y, 2])
 
+# set up container for data used in the streamplot
 flow_hist = np.empty([maxints_sp, lat_x, lat_y, 2])
 
 #%% SIMULATION
@@ -59,8 +74,7 @@ for t in range(timesteps):
 
     # if it sits at the leftmost edge, prescribe its inflow
     if lat.cart.coords[0] == 0:
-        u[0, :, 0] = inflow
-        # u[0, :, 1] = 0  # ???
+        u[0, :, 0] = inflow  # [left, all, x-direction]
 
     lat.collide(omega=omega, u=u)
 
@@ -78,7 +92,7 @@ for t in range(timesteps):
         if rank == 0:
             flow_hist[t // interval_sp] = u_snapshot
 
-#%% SAVE AND EXIT
+#%% SAVE RESULTS
 if rank == 0:
     # reconstruct walls
     walls = np.array([[x, y] for x in np.arange(lat_x)

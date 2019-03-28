@@ -1,23 +1,36 @@
 """
-Simulation of fluidic oscillator
+ Simulate flow through any arbitrary structure: in this case, a fluidic oscillator.
+
+ARGUMENTS
+    --lat_x, --lat_y : int
+        overrides default x- and y-dimensions of the entire lattice
+
+    --grid_x, --grid_y : int
+        overrides default x- and y-dimensions of the cartesian processor arrangement. If specified, their product must match the number of processors in use.
+
+INPUTS
+    oscillator.bmp
+        monochrome bitmap representation of oscillator
+
+OUTPUTS
+    oscillator.pkl.gz
+        Compressed results file. Used for plotting.
 
 @author: AlexR
 """
+
 #%% IMPORTS
 
 import numpy as np
 from mpi4py import MPI
-from lattice import Lattice
-import matplotlib.pyplot as plt
-from matplotlib import cm
-import os
-import _pickle as pickle
-import gzip
 import PIL
 from PIL import Image
+
+import _pickle as pickle
+from lattice import Lattice
 from utils import fetch_dim_args, pickle_save
 
-#%% DEFAULT PARAMETERS
+#%% SET PARAMETERS
 
 [lat_x, lat_y], grid_dims = fetch_dim_args(lat_default=[400, 300])
 
@@ -60,6 +73,7 @@ outflow_y = np.logical_not(lat.walls[-1, :])
 if rank == 0:
     lat.print_info()
 
+# set up container for data used in the streamplot
 flow_hist = np.empty([len(t_recordpoints), lat_x, lat_y, 2])
 
 max_timesteps = max(t_recordpoints)
@@ -90,7 +104,7 @@ for t in range(max_timesteps + 1):
         if rank == 0:
             flow_hist[t_recordpoints.index(t)] = u_snapshot
 
-#%% SAVE TO FILE
+#%% SAVE RESULTS
 if rank == 0:
 
     d = dict(
@@ -98,5 +112,3 @@ if rank == 0:
          for k in ['lat_x', 'lat_y', 'omega', 'inflow', 't_recordpoints', 'flow_hist', 'walls']))
 
     pickle_save(outfile, d)
-
-

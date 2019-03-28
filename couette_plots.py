@@ -1,3 +1,10 @@
+"""
+Plotting script to be run after couette.py
+
+Serial only.
+
+@author: AlexR
+"""
 #%% IMPORTS
 
 import gzip

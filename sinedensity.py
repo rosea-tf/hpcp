@@ -1,17 +1,32 @@
 """
-Simulation of sine-distributed density evolution
+prescribe an initial density at time t=0 based on a sine wave pattern that varies along the x-axis:
+
+ Simulate the evolution/decay of this disturbance over time.
+
+ARGUMENTS
+    --lat_x, --lat_y : int
+        overrides default x- and y-dimensions of the entire lattice
+
+    --grid_x, --grid_y : int
+        overrides default x- and y-dimensions of the cartesian processor arrangement. If specified, their product must match the number of processors in use.
+
+INPUTS
+    None
+
+OUTPUTS
+    sinedensity.pkl.gz
+        Compressed results file. Used for plotting.
 
 @author: AlexR
 """
+
 #%% IMPORTS
 
 import numpy as np
 from mpi4py import MPI
-from lattice import Lattice
-import matplotlib.pyplot as plt
-import os
+
 import _pickle as pickle
-import gzip
+from lattice import Lattice
 from utils import fetch_dim_args, pickle_save
 
 #%% SET PARAMETERS
@@ -39,9 +54,11 @@ if rank == 0:
 sin_x = (epsilon * np.sin(
     2 * np.pi * lat.cell_ranges[0] / lat_x))[:, np.newaxis, np.newaxis]
 
+# add disturbance to current rho
 rho_modified = lat.rho() + sin_x
 
-#density and velocity are constant wrt y, so we only need to store one row of x at every timestep
+# data structure to store results.
+# density and velocity are constant wrt y, so we only need to store one row of x at every timestep
 density_hists = {
     omega: np.empty([timesteps // rec_interval, lat_x])
     for omega in omegas
@@ -63,13 +80,14 @@ for omega in omegas:
     # run collision operator once, feeding this prescribed rho in
     lat.collide(rho=rho_modified)
 
+    # begin simulation loop
     for t in range(timesteps):
         lat.halo_copy()
         lat.stream()
         lat.collide(omega=omega)
 
         if t % rec_interval == 0:
-            # save a plot
+            # save results
             rho_snapshot = lat.gather(lat.rho())
             u_snapshot = lat.gather(lat.u())
 

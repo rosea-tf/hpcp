@@ -1,9 +1,17 @@
+"""
+Plotting script to be run after timer.py
+
+Serial only.
+
+@author: AlexR
+"""
 #%% IMPORTS
 
 import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import curve_fit
 
 from utils import plot_save
 
@@ -101,8 +109,6 @@ y = t_wall / t_wall[0]
 def f(p, fp):
     return (1 - fp) + (fp / p)
 
-
-from scipy.optimize import curve_fit
 
 popt, pcov = curve_fit(f, p, y)
 

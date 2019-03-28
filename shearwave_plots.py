@@ -1,5 +1,7 @@
 """
-Plotting shear wave decay
+Plotting script to be run after shearwave.py
+
+Serial only.
 
 @author: AlexR
 """

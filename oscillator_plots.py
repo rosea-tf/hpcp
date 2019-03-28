@@ -1,3 +1,10 @@
+"""
+Plotting script to be run after oscillator.py
+
+Serial only.
+
+@author: AlexR
+"""
 #%% IMPORTS
 
 import gzip
